@@ -166,7 +166,7 @@ Una vez en el POS, abre otra terminal y ejecuta:
 ```bash
 curl -X POST http://localhost:5000/api/products \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer [TU_TOKEN]" \
+  -H "Authorization: Bearer [eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InlvdXJfdXNlciIsImlhdCI6MTc4MjEwMzcwOCwiZXhwIjoxNzgyMTMyNTA4fQ.A5zYHD-DYXZocSFWZYIepoSwikDPgos6OiNu99bq-5c]" \
   -d '{
     "codigo_barras": "001",
     "nombre": "Arroz Premium",
