@@ -1,5 +1,6 @@
 // ==========================================
 // BACKEND POS - Versión Crítica Mejorada
+// Con guardado de XML en archivos
 // ==========================================
 // Archivo: backend/src/app.js
 
@@ -10,6 +11,8 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
+const mkdirp = require("mkdirp");
+require('dotenv').config();
 
 // ==========================================
 // 1. CONFIGURACIÓN
@@ -19,16 +22,14 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "tu-clave-secreta-muy-segura-cambiar-en-produccion";
 const DB_PATH = path.join(__dirname, "../database/pos.db");
+const COMPROBANTES_PATH = path.join(__dirname, "../comprobantes");
 
 // Middleware
 app.use(express.json());
 app.use(cors());
 
-// Crear carpeta database si no existe
-if (!fs.existsSync(path.dirname(DB_PATH))) {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  console.log("✓ Carpeta database creada");
-}
+// Crear carpeta comprobantes si no existe
+mkdirp.sync(COMPROBANTES_PATH);
 
 // Base de datos SQLite PERSISTENTE
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -45,7 +46,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 function initializeDatabase() {
   db.serialize(() => {
-    // Tabla de usuarios (NUEVA)
+    // Tabla de usuarios
     db.run(`
       CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY,
@@ -118,7 +119,7 @@ function initializeDatabase() {
       )
     `);
 
-    // Tabla de comprobantes HACIENDA
+    // Tabla de comprobantes HACIENDA (MEJORADA)
     db.run(`
       CREATE TABLE IF NOT EXISTS comprobantes (
         id INTEGER PRIMARY KEY,
@@ -134,11 +135,12 @@ function initializeDatabase() {
         fecha_aceptacion DATETIME,
         intentos_envio INTEGER DEFAULT 0,
         proximo_intento DATETIME,
+        ruta_archivo TEXT,
         FOREIGN KEY (venta_id) REFERENCES ventas(id)
       )
     `);
 
-    // Tabla de auditoría (NUEVA - seguridad)
+    // Tabla de auditoría
     db.run(`
       CREATE TABLE IF NOT EXISTS auditoria (
         id INTEGER PRIMARY KEY,
@@ -181,7 +183,7 @@ function registrarAuditoria(usuarioId, accion, tabla, registroId, datosAntiguos,
 // 4. SERVICIOS
 // ==========================================
 
-// SERVICE: Usuarios (NUEVA - Autenticación real)
+// SERVICE: Usuarios
 const userService = {
   getUserByUsername: (username) => {
     return new Promise((resolve, reject) => {
@@ -406,66 +408,100 @@ const salesService = {
   }
 };
 
-// SERVICE: Facturación (PREPARADO PARA HACIENDA)
+// SERVICE: Facturación (MEJORADO - PASO 1)
 const facturacionService = {
   buildXML: (venta, detalles) => {
-    // VERSIÓN 4.4 SIMPLIFICADA
-    const fechaEmision = new Date().toISOString();
+    const haciendaConfig = require('./config/hacienda');
+    const XMLValidator = require('./utils/xmlValidator');
     
+    // Información de la venta
+    const fechaEmision = new Date().toISOString();
+    const tipoComprobante = '04'; // Tiquete electrónico
+    
+    // Construir detalles XML
     let detallesXML = '';
     detalles.forEach((detalle, index) => {
+      const cantidad = parseFloat(detalle.cantidad) || 0;
+      const precioUnitario = parseFloat(detalle.precio_unitario) || 0;
+      const subtotal = parseFloat(detalle.subtotal) || 0;
+      const iva = parseFloat(detalle.iva) || 0;
+      
       detallesXML += `
     <LineaDetalle>
       <NumeroLineaDetalle>${index + 1}</NumeroLineaDetalle>
-      <CodigoActividad>6201</CodigoActividad>
+      <CodigoActividad>${haciendaConfig.codigoActividad}</CodigoActividad>
       <CodigoProducto>${detalle.producto_id}</CodigoProducto>
-      <DescripcionProducto>${detalle.nombre}</DescripcionProducto>
-      <Cantidad>${detalle.cantidad}</Cantidad>
+      <DescripcionProducto>${detalle.nombre || 'Producto'}</DescripcionProducto>
+      <Cantidad>${cantidad}</Cantidad>
       <UnidadMedida>Unid</UnidadMedida>
-      <PrecioUnitario>${detalle.precio_unitario}</PrecioUnitario>
+      <PrecioUnitario>${precioUnitario.toFixed(2)}</PrecioUnitario>
       <Descuento>
-        <MontoDescuento>${detalle.descuento || 0}</MontoDescuento>
+        <MontoDescuento>${(detalle.descuento || 0).toFixed(2)}</MontoDescuento>
       </Descuento>
-      <SubTotal>${detalle.subtotal}</SubTotal>
+      <SubTotal>${subtotal.toFixed(2)}</SubTotal>
       <ImpuestoVentas>
         <Tarifa>13</Tarifa>
-        <Monto>${detalle.iva}</Monto>
+        <Monto>${iva.toFixed(2)}</Monto>
       </ImpuestoVentas>
+      <MontoNeto>${subtotal.toFixed(2)}</MontoNeto>
     </LineaDetalle>`;
     });
 
+    // Construir XML v4.4 COMPLETO
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <FacturaElectronicaV4_4>
   <Encabezado>
-    <NumeroCedulaEmisor>3101234567</NumeroCedulaEmisor>
+    <NumeroCedulaEmisor>${haciendaConfig.cedulaEmisor}</NumeroCedulaEmisor>
     <NumeroCedulaReceptor>N/A</NumeroCedulaReceptor>
-    <ProveedorSistema>3101234567</ProveedorSistema>
-    <TipoComprobante>04</TipoComprobante>
+    <ProveedorSistema>${haciendaConfig.cedulaEmisor}</ProveedorSistema>
+    <NombreComercial>${haciendaConfig.nombreComercial}</NombreComercial>
+    <TipoComprobante>${tipoComprobante}</TipoComprobante>
     <FechaEmision>${fechaEmision}</FechaEmision>
     <Moneda>CRC</Moneda>
+    <NumeroConsecutivo>001-001-${Math.floor(Math.random() * 1000000)}</NumeroConsecutivo>
+    <CodigoActividad>${haciendaConfig.codigoActividad}</CodigoActividad>
+    <Provincia>${haciendaConfig.provincia}</Provincia>
+    <Canton>${haciendaConfig.canton}</Canton>
+    <Distrito>${haciendaConfig.distrito}</Distrito>
+    <Barrio>${haciendaConfig.barrio}</Barrio>
+    <DireccionExacta>${haciendaConfig.direccionExacta}</DireccionExacta>
   </Encabezado>
   <DetalleServicio>${detallesXML}
   </DetalleServicio>
   <ResumenFactura>
     <CodigoMoneda>CRC</CodigoMoneda>
-    <TotalServGravados>${venta.total_subtotal}</TotalServGravados>
-    <TotalImpuestoVentas>${venta.total_iva}</TotalImpuestoVentas>
-    <TotalComprobante>${venta.total_venta}</TotalComprobante>
+    <TotalServGravados>${venta.total_subtotal.toFixed(2)}</TotalServGravados>
+    <TotalServExentos>0.00</TotalServExentos>
+    <TotalImpuestoVentas>${venta.total_iva.toFixed(2)}</TotalImpuestoVentas>
+    <TotalImpuestoSelectivo>0.00</TotalImpuestoSelectivo>
+    <TotalComprobante>${venta.total_venta.toFixed(2)}</TotalComprobante>
   </ResumenFactura>
+  <CodigoSeguridad></CodigoSeguridad>
 </FacturaElectronicaV4_4>`;
 
-    return xml;
+    // VALIDAR XML
+    const validacion = XMLValidator.validar(xml);
+    console.log(`\n📋 Validación XML v4.4: ${validacion.válido ? '✓ VÁLIDO' : '❌ INVÁLIDO'}`);
+    
+    if (!validacion.válido) {
+      console.log('Errores encontrados:');
+      validacion.errores.forEach(error => console.log(`  - ${error}`));
+    }
+
+    return {
+      xml,
+      válido: validacion.válido,
+      errores: validacion.errores
+    };
   },
 
   signXML: async (xmlContent) => {
-    // TODO: Implementar con librería de firma
-    // Por ahora: retorna XML sin firmar
+    // Por ahora: retorna XML sin firmar (PASO 2 lo hace)
     return xmlContent;
   },
 
   sendToHacienda: async (xmlFirmado, claveHacienda) => {
-    // TODO: POST real a api.comprobanteselectronicos.go.cr/recepcion/v1/
-    // Por ahora: simula respuesta exitosa
+    // Por ahora: simula respuesta (PASO 3 lo hace real)
     console.log("📤 [MOCK] Enviando a Hacienda:", claveHacienda);
     
     return new Promise((resolve) => {
@@ -477,6 +513,34 @@ const facturacionService = {
         });
       }, 1000);
     });
+  }
+};
+
+// SERVICE: Reportes
+const reportService = {
+  getCashClosing: async () => {
+    const ventas = await salesService.getDailySales();
+    
+    let efectivo = 0, sinpe = 0, tarjeta = 0, totalIVA = 0;
+
+    ventas.forEach((venta) => {
+      if (venta.metodo_pago === "cash") efectivo += venta.total_venta;
+      else if (venta.metodo_pago === "sinpe") sinpe += venta.total_venta;
+      else if (venta.metodo_pago === "tarjeta") tarjeta += venta.total_venta;
+      
+      totalIVA += venta.total_iva;
+    });
+
+    return {
+      fecha: new Date().toISOString().split("T")[0],
+      totalVentas: ventas.length,
+      efectivo,
+      sinpe,
+      tarjeta,
+      total: efectivo + sinpe + tarjeta,
+      totalIVA,
+      montoNeto: (efectivo + sinpe + tarjeta) - totalIVA
+    };
   }
 };
 
@@ -599,6 +663,7 @@ app.post("/api/products", authMiddleware, async (req, res) => {
     if (req.rol !== "admin" && req.rol !== "gerente" && req.rol !== "cajero") {
       return res.status(403).json({ error: "No tienes permiso" });
     }
+
     const producto = await productService.createProduct(req.body);
     await registrarAuditoria(req.usuarioId, "PRODUCTO_CREADO", "productos", producto.id, null, req.body);
     
@@ -617,7 +682,7 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
     const ventaCompleta = await salesService.getSaleById(venta.ventaId);
 
     // Generar comprobante XML
-    const xml = facturacionService.buildXML(
+    const xmlResult = facturacionService.buildXML(
       { 
         total_subtotal: venta.subtotal, 
         total_iva: venta.iva, 
@@ -626,17 +691,37 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
       ventaCompleta.detalles
     );
 
+    const xml = xmlResult.xml;
+
+    // Si hay errores de validación, log pero continúa
+    if (!xmlResult.válido) {
+      console.warn('⚠️ XML con errores de validación:', xmlResult.errores);
+    }
+
     // Firmar (próximo paso)
-    const xmlFirmado = await facturacionService.signXML(xml);
+    const xmlFirmado = await facturacionService.signXML(xmlResult.xml);
 
     // Generar clave de 50 dígitos (MOCK)
     const claveHacienda = "506010120080622026123456789012345678901234";
 
+    // Guardar XML como ARCHIVO en disco
+    const hoy = new Date().toISOString().split('T')[0];
+    const carpetaComprobantes = path.join(__dirname, '../comprobantes', hoy);
+    
+    // Crear carpeta si no existe
+    mkdirp.sync(carpetaComprobantes);
+    
+    // Guardar archivo XML
+    const nombreArchivo = `${venta.numeroVenta}-xml.xml`;
+    const rutaXML = path.join(carpetaComprobantes, nombreArchivo);
+    fs.writeFileSync(rutaXML, xmlFirmado);
+    console.log(`✓ XML guardado en: ${rutaXML}`);
+
     // Guardar comprobante en BD
     db.run(
-      `INSERT INTO comprobantes (venta_id, tipo_comprobante, clave_hacienda, xml_content, estado_hacienda)
-       VALUES (?, ?, ?, ?, ?)`,
-      [venta.ventaId, "04", claveHacienda, xmlFirmado, "pendiente"]
+      `INSERT INTO comprobantes (venta_id, tipo_comprobante, clave_hacienda, xml_content, estado_hacienda, ruta_archivo)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [venta.ventaId, "04", claveHacienda, xmlFirmado, "pendiente", rutaXML]
     );
 
     // Enviar a Hacienda (próximo paso)
@@ -647,7 +732,8 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
       comprobante: {
         clave: claveHacienda,
         estado: "pendiente",
-        xml: xmlFirmado
+        xml: xmlFirmado,
+        ruta: rutaXML
       }
     });
   } catch (error) {
@@ -718,8 +804,10 @@ app.listen(PORT, () => {
 ║   POS Costa Rica v1.0 Beta             ║
 ║   Puerto: ${PORT}                          ║
 ║   BD: ${DB_PATH}
+║   Comprobantes: ${COMPROBANTES_PATH}
 ║   ✓ Persistencia: SÍ                    ║
 ║   ✓ Autenticación: SÍ                   ║
+║   ✓ XML en archivos: SÍ                 ║
 ║   ⏳ Hacienda: En desarrollo             ║
 ╚════════════════════════════════════════╝
   `);
