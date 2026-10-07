@@ -13,6 +13,7 @@ const path = require("path");
 const fs = require("fs");
 const mkdirp = require("mkdirp");
 const InventarioDBF = require("./utils/dbfInventario");
+const { crearRespaldo, listarRespaldos } = require("./utils/respaldo");
 // El .env vive junto a este archivo, no en el directorio desde donde se ejecuta
 require('dotenv').config({ path: path.join(__dirname, ".env") });
 
@@ -22,6 +23,8 @@ require('dotenv').config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+// Sin HOST escucha en toda la red; la app de escritorio usa 127.0.0.1
+const HOST = process.env.HOST || undefined;
 const JWT_SECRET = process.env.JWT_SECRET || "tu-clave-secreta-muy-segura-cambiar-en-produccion";
 // Carpeta de datos del cliente (bases, DBF y comprobantes). Con DATA_DIR en el
 // .env vive fuera del código; sin él se usa la carpeta backend/
@@ -35,10 +38,20 @@ const DB_HACIENDA_PATH = path.join(DATABASE_DIR, "hacienda.db");
 const INVENTARIO_PATH = path.join(DATABASE_DIR, "FacInve.DBF");
 const COMPROBANTES_PATH = path.join(DATA_DIR, "comprobantes");
 const ROLES = ["cajero", "admin"];
+// Respaldos: por defecto junto a los datos; BACKUP_DIR permite otro disco
+const BACKUP_DIR = process.env.BACKUP_DIR
+  ? path.resolve(process.env.BACKUP_DIR)
+  : path.join(DATA_DIR, "respaldos");
+const MAX_RESPALDOS = 30;
 
 // Middleware
 app.use(express.json());
 app.use(cors());
+
+// App de escritorio: el backend también sirve el frontend compilado
+if (process.env.FRONTEND_DIR) {
+  app.use(express.static(process.env.FRONTEND_DIR));
+}
 
 // Crear carpetas de datos si no existen
 mkdirp.sync(DATABASE_DIR);
@@ -918,6 +931,60 @@ app.get("/api/sales/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// RESPALDOS
+function respaldar() {
+  return crearRespaldo({
+    carpeta: BACKUP_DIR,
+    bases: [
+      { conexion: db, archivo: "pos.db" },
+      { conexion: dbHacienda, archivo: "hacienda.db" }
+    ],
+    archivos: [INVENTARIO_PATH],
+    maximo: MAX_RESPALDOS
+  });
+}
+
+// Un respaldo automático por día: al arrancar y, si la app queda abierta,
+// al cambiar de fecha
+function programarRespaldoDiario() {
+  const revisar = async () => {
+    try {
+      const ultimo = listarRespaldos(BACKUP_DIR)[0];
+      if (ultimo && ultimo.fecha === fechaLocalHoy()) return;
+      const respaldo = await respaldar();
+      console.log(`✓ Respaldo automático: ${path.join(BACKUP_DIR, respaldo.nombre)}`);
+    } catch (error) {
+      console.error("❌ Error en el respaldo automático:", error.message);
+    }
+  };
+  revisar();
+  setInterval(revisar, 60 * 60 * 1000).unref();
+}
+
+app.get("/api/admin/backups", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+    res.json({ carpeta: BACKUP_DIR, maximo: MAX_RESPALDOS, respaldos: listarRespaldos(BACKUP_DIR) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/admin/backups", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+    const respaldo = await respaldar();
+    await registrarAuditoria(req.usuarioId, "RESPALDO_CREADO", null, null, null, respaldo);
+    res.status(201).json(respaldo);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // USUARIOS (solo admin): lista para los filtros de administración
 app.get("/api/users", authMiddleware, async (req, res) => {
   try {
@@ -995,13 +1062,16 @@ app.get("/health", (req, res) => {
 // 7. INICIAR SERVIDOR
 // ==========================================
 
-initializeDatabase()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`
+// Inicializa las bases y levanta el servidor; resuelve con el servidor HTTP
+function iniciar() {
+  return initializeDatabase().then(
+    () =>
+      new Promise((resolve, reject) => {
+        const server = app.listen(PORT, HOST, () => {
+          console.log(`
 ╔════════════════════════════════════════╗
 ║   POS Costa Rica v1.0 Beta             ║
-║   Puerto: ${PORT}                          ║
+║   Puerto: ${server.address().port}                          ║
 ║   BD usuarios: ${DB_PATH}
 ║   BD Hacienda: ${DB_HACIENDA_PATH}
 ║   Productos: ${INVENTARIO_PATH}
@@ -1011,12 +1081,21 @@ initializeDatabase()
 ║   ✓ XML en archivos: SÍ                 ║
 ║   ⏳ Hacienda: En desarrollo             ║
 ╚════════════════════════════════════════╝
-      `);
-    });
-  })
-  .catch((error) => {
-    console.error("❌ No se pudo inicializar la base de datos:", error);
+          `);
+          programarRespaldoDiario();
+          resolve(server);
+        });
+        server.on("error", reject);
+      })
+  );
+}
+
+// Ejecutado directo (npm start) arranca solo; la app de escritorio llama a iniciar()
+if (require.main === module) {
+  iniciar().catch((error) => {
+    console.error("❌ No se pudo iniciar el servidor:", error);
     process.exit(1);
   });
+}
 
-module.exports = app;
+module.exports = { app, iniciar };

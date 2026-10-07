@@ -1369,3 +1369,114 @@ select {
     margin-top: 14px;
   }
 }
+
+/* ==========================================
+   ÍCONOS, AVISOS Y ACCIONES DEL ENCABEZADO
+   ========================================== */
+
+.icon {
+  flex-shrink: 0;
+}
+
+h2 .icon,
+h3 .icon {
+  margin-right: 9px;
+  vertical-align: -4px;
+}
+
+.btn-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 0 auto;
+}
+
+.header-actions .btn-logout {
+  margin: 0;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(253, 246, 226, 0.86);
+  color: var(--tinta);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: var(--crema);
+}
+
+.toasts {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, 90vw);
+  padding: 13px 22px;
+  border-radius: 999px;
+  background: var(--tinta);
+  color: var(--crema);
+  font-size: 15px;
+  font-weight: 500;
+  box-shadow: 0 12px 30px rgba(20, 45, 90, 0.25);
+  animation: toast-entra 0.2s ease-out;
+}
+
+.toast.ok .icon {
+  color: #7ddc9a;
+}
+
+.toast.error {
+  background: #b3261e;
+  color: white;
+}
+
+@keyframes toast-entra {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.backup-info {
+  margin-bottom: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #666;
+}
+
+.backup-info strong {
+  color: var(--tinta);
+  word-break: break-all;
+}
+
+@media (max-width: 768px) {
+  .header-actions {
+    margin-top: 14px;
+  }
+}

@@ -10,7 +10,10 @@ import "./App.css";
 // SERVICIO API (Cliente HTTP)
 // ==========================================
 
-const API_BASE = "http://localhost:5000/api";
+// En desarrollo (npm start, puerto 3000) el backend corre aparte en el 5000;
+// compilado, el mismo backend sirve esta página y la API
+const API_BASE =
+  process.env.NODE_ENV === "development" ? "http://localhost:5000/api" : "/api";
 
 
 const apiService = {
@@ -84,6 +87,10 @@ const apiService = {
 
   getUsers: () => apiService.request("/users"),
 
+  getBackups: () => apiService.request("/admin/backups"),
+
+  createBackup: () => apiService.post("/admin/backups", {}),
+
   login: async (username, password) => {
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
@@ -97,6 +104,202 @@ const apiService = {
     return data;
   }
 };
+
+// ==========================================
+// INTERFAZ: íconos, avisos y lector de código de barras
+// ==========================================
+
+// Funciones que expone la app de escritorio (no existe en el navegador)
+const escritorio = window.posDesktop || null;
+
+const ICONOS = {
+  buscar: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  carrito: <><circle cx="9" cy="20" r="1.5" /><circle cx="18" cy="20" r="1.5" /><path d="M2 3h3l2.6 11.5h11L21 7H6.5" /></>,
+  pago: <><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M3 10h18M7 15h4" /></>,
+  grafico: <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />,
+  recibo: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></>,
+  caja: <><path d="M3 8l9-5 9 5v8l-9 5-9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></>,
+  usuario: <><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" /></>,
+  mas: <path d="M12 5v14M5 12h14" />,
+  check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  cerrar: <path d="M6 6l12 12M18 6 6 18" />,
+  alerta: <><path d="M12 3 2.5 20h19z" /><path d="M12 10v4.5M12 17.5v.5" /></>,
+  respaldo: <><path d="M12 3v11m0 0-4-4m4 4 4-4" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></>,
+  carpeta: <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+  pantalla: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+};
+
+function Icon({ nombre, size = 20 }) {
+  return (
+    <svg
+      className="icon"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {ICONOS[nombre]}
+    </svg>
+  );
+}
+
+// Avisos dentro de la app (reemplazan a alert): notify("ok" | "error", texto)
+const escuchasAvisos = new Set();
+let ultimoAviso = 0;
+const notify = (tipo, texto) =>
+  escuchasAvisos.forEach((escucha) => escucha({ id: ++ultimoAviso, tipo, texto }));
+
+function Toasts() {
+  const [avisos, setAvisos] = useState([]);
+
+  useEffect(() => {
+    const agregar = (aviso) => {
+      setAvisos((lista) => [...lista, aviso]);
+      setTimeout(
+        () => setAvisos((lista) => lista.filter((a) => a.id !== aviso.id)),
+        aviso.tipo === "error" ? 6000 : 4000
+      );
+    };
+    escuchasAvisos.add(agregar);
+    return () => escuchasAvisos.delete(agregar);
+  }, []);
+
+  return (
+    <div className="toasts" role="status" aria-live="polite">
+      {avisos.map((aviso) => (
+        <div key={aviso.id} className={`toast ${aviso.tipo}`}>
+          <Icon nombre={aviso.tipo === "ok" ? "check" : "alerta"} size={18} />
+          <span>{aviso.texto}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Tono grave y corto: el cajero lo oye sin mirar la pantalla
+function sonarError() {
+  try {
+    const audio = new (window.AudioContext || window.webkitAudioContext)();
+    const oscilador = audio.createOscillator();
+    const volumen = audio.createGain();
+    oscilador.type = "square";
+    oscilador.frequency.value = 220;
+    volumen.gain.value = 0.15;
+    oscilador.connect(volumen);
+    volumen.connect(audio.destination);
+    oscilador.start();
+    oscilador.stop(audio.currentTime + 0.3);
+    oscilador.onended = () => audio.close();
+  } catch (error) {
+    // Sin audio disponible: queda el aviso en pantalla
+  }
+}
+
+// Agrega al carrito el producto cuyo código coincide exacto. Si el código no
+// existe avisa con sonido; si solo hay coincidencias parciales no hace nada
+// (es una búsqueda por nombre). Devuelve true si lo agregó.
+async function agregarPorCodigo(codigo, onAddToCart) {
+  try {
+    const productos = await apiService.searchProducts(codigo);
+    const lista = Array.isArray(productos) ? productos : [];
+    const exacto = lista.find((p) => p.codigo_barras === codigo || p.codigo === codigo);
+    if (exacto) {
+      onAddToCart(exacto);
+      return true;
+    }
+    if (lista.length === 0) {
+      sonarError();
+      notify("error", `El código ${codigo} no existe`);
+    }
+  } catch (error) {
+    sonarError();
+    notify("error", "No se pudo buscar el producto: " + error.message);
+  }
+  return false;
+}
+
+// Devuelve un campo a su valor anterior avisándole a React
+function restaurarValor(campo, valor) {
+  const prototipo =
+    campo instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(prototipo, "value").set.call(campo, valor);
+  campo.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+// El lector "teclea" mucho más rápido que una persona: varios caracteres
+// seguidos con menos de esta pausa y un Enter al final son una lectura
+const PAUSA_LECTOR_MS = 50;
+const LARGO_MINIMO_LECTURA = 6;
+
+// Captura lecturas del lector hechas con el cursor fuera del buscador (por
+// ejemplo en "Monto recibido"): deshace lo tecleado en ese campo y entrega el
+// código a alLeer
+function useLectorGlobal(activo, alLeer) {
+  const alLeerRef = useRef(alLeer);
+  alLeerRef.current = alLeer;
+
+  useEffect(() => {
+    if (!activo) return undefined;
+    let codigo = "";
+    let ultimaTecla = 0;
+    let origen = null;
+
+    const alTeclear = (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const ahora = performance.now();
+      if (ahora - ultimaTecla > PAUSA_LECTOR_MS) {
+        codigo = "";
+        origen = null;
+      }
+
+      if (e.key === "Enter") {
+        const leido = codigo;
+        codigo = "";
+        // En el buscador la lectura la atiende el propio buscador
+        if (leido.length < LARGO_MINIMO_LECTURA || e.target.classList?.contains("search-input")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (origen) restaurarValor(origen.campo, origen.valor);
+        alLeerRef.current(leido);
+        return;
+      }
+
+      if (e.key.length === 1) {
+        if (!codigo) {
+          const esCampo = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+          origen = esCampo ? { campo: e.target, valor: e.target.value } : null;
+        }
+        codigo += e.key;
+        ultimaTecla = ahora;
+      }
+    };
+
+    window.addEventListener("keydown", alTeclear, true);
+    return () => window.removeEventListener("keydown", alTeclear, true);
+  }, [activo]);
+}
+
+// Atajo de teclado global mientras el componente está montado y activo
+function useAtajo(tecla, accion, activo = true) {
+  const accionRef = useRef(accion);
+  accionRef.current = accion;
+
+  useEffect(() => {
+    if (!activo) return undefined;
+    const alTeclear = (e) => {
+      if (e.key !== tecla) return;
+      e.preventDefault();
+      accionRef.current();
+    };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [tecla, activo]);
+}
 
 // ==========================================
 // COMPONENTE: Pantalla de Login
@@ -113,10 +316,10 @@ function LoginScreen({ onLogin }) {
       if (result.token) {
         onLogin();
       } else {
-        alert("Error: " + result.error);
+        notify("error", result.error);
       }
     } catch (error) {
-      alert("Error de conexión: " + error.message);
+      notify("error", "Error de conexión: " + error.message);
     }
   };
 
@@ -163,7 +366,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
 
   return (
     <div className="cart">
-      <h2>🛒 Carrito</h2>
+      <h2><Icon nombre="carrito" />Carrito</h2>
 
       {items.length === 0 ? (
         <p className="empty-cart">Sin productos añadidos</p>
@@ -202,7 +405,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
                   className="btn-remove"
                   onClick={() => onRemoveItem(item.id)}
                 >
-                  ✕
+                  <Icon nombre="cerrar" size={13} />
                 </button>
               </div>
             ))}
@@ -232,7 +435,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
 // COMPONENTE: Búsqueda de Productos
 // ==========================================
 
-function ProductSearch({ onAddToCart }) {
+function ProductSearch({ onAddToCart, activo }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [searchError, setSearchError] = useState("");
@@ -253,19 +456,17 @@ function ProductSearch({ onAddToCart }) {
     const codigo = e.target.value.trim();
     if (!codigo) return;
     e.preventDefault();
-    try {
-      const productos = await apiService.searchProducts(codigo);
-      const exacto = (Array.isArray(productos) ? productos : []).find(
-        (p) => p.codigo_barras === codigo || p.codigo === codigo
-      );
-      if (exacto) {
-        onAddToCart(exacto);
-        limpiar();
-      }
-    } catch (error) {
-      setSearchError("No se pudo buscar productos: " + error.message);
-    }
+    if (await agregarPorCodigo(codigo, onAddToCart)) limpiar();
   };
+
+  // F2 lleva el cursor al buscador (se espera a que la vista Inicio se muestre)
+  useAtajo("F2", () =>
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0)
+  );
+  useAtajo("Escape", limpiar, activo);
 
   const handleSearch = async (query) => {
     setSearch(query);
@@ -290,11 +491,11 @@ function ProductSearch({ onAddToCart }) {
 
   return (
     <div className="product-search">
-      <h2>🔍 Buscar Productos</h2>
+      <h2><Icon nombre="buscar" />Buscar productos</h2>
 
       <input
         type="text"
-        placeholder="Código de barras o nombre..."
+        placeholder="Código de barras o nombre...  (F2)"
         value={search}
         onChange={(e) => handleSearch(e.target.value)}
         onKeyDown={handleEnter}
@@ -342,17 +543,20 @@ function ProductSearch({ onAddToCart }) {
 // COMPONENTE: Formulario de Pago
 // ==========================================
 
-function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
+function PaymentForm({ cartTotal, onPaymentComplete, isProcessing, activo }) {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [amountReceived, setAmountReceived] = useState("");
   const [sinpeRef, setSinpeRef] = useState("");
   const [cardLast4, setCardLast4] = useState("");
+  const montoRef = useRef(null);
 
   const change = paymentMethod === "cash" ? (amountReceived || 0) - cartTotal : 0;
 
   const handlePay = async () => {
+    if (isProcessing) return;
     if (paymentMethod === "cash" && (!amountReceived || amountReceived < cartTotal)) {
-      alert("Monto recibido insuficiente");
+      notify("error", "Monto recibido insuficiente");
+      montoRef.current?.focus();
       return;
     }
 
@@ -370,9 +574,11 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
     }
   };
 
+  useAtajo("F4", handlePay, activo);
+
   return (
     <div className="payment-form">
-      <h2>💰 Métodos de Pago</h2>
+      <h2><Icon nombre="pago" />Método de pago</h2>
 
       <div className="payment-methods">
         <label>
@@ -409,6 +615,7 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
           <label>Monto recibido (₡)</label>
           <input
             type="number"
+            ref={montoRef}
             value={amountReceived}
             onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
             placeholder="0"
@@ -449,7 +656,7 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
         onClick={handlePay}
         disabled={isProcessing}
       >
-        {isProcessing ? "⏳ Procesando..." : "COBRAR"}
+        {isProcessing ? "Procesando..." : "COBRAR  (F4)"}
       </button>
     </div>
   );
@@ -541,7 +748,7 @@ function ReportsScreen({ esAdmin }) {
     <div className="report-page">
       <div className="report-card">
         <div className="report-header">
-          <h2>📊 Reporte de ventas</h2>
+          <h2><Icon nombre="grafico" />Reporte de ventas</h2>
           <FiltroFecha fecha={fecha} onChange={setFecha} onRecargar={recargar} cargando={cargando} />
         </div>
 
@@ -630,7 +837,7 @@ function CashClosingScreen({ esAdmin }) {
     <div className="report-page">
       <div className={esAdmin ? "report-card medium" : "report-card narrow"}>
         <div className="report-header">
-          <h2>🧾 Cierre de caja</h2>
+          <h2><Icon nombre="recibo" />Cierre de caja</h2>
           <div className="report-toolbar">
             {esAdmin && (
               <label>
@@ -766,7 +973,7 @@ function ProductsScreen() {
     <div className="report-page">
       <div className="report-card">
         <div className="report-header">
-          <h2>📦 Productos e inventario</h2>
+          <h2><Icon nombre="caja" />Productos e inventario</h2>
           <div className="report-toolbar">
             <input
               type="text"
@@ -860,7 +1067,8 @@ function ProductsScreen() {
 
 const VISTAS_ADMIN = [
   { id: "admin-usuarios", label: "Crear usuarios" },
-  { id: "admin-inventario", label: "Agregar producto o cantidad" }
+  { id: "admin-inventario", label: "Agregar producto o cantidad" },
+  { id: "admin-respaldos", label: "Respaldos" }
 ];
 
 function AdminMenu({ view, onSelect }) {
@@ -927,7 +1135,7 @@ function AdminUsersScreen() {
     setMensaje(null);
     try {
       const usuario = await apiService.createUser(form);
-      setMensaje({ ok: true, texto: `✓ Usuario "${usuario.username}" creado con rol ${usuario.rol}` });
+      setMensaje({ ok: true, texto: `Usuario "${usuario.username}" creado con rol ${usuario.rol}` });
       setForm(vacio);
     } catch (error) {
       setMensaje({ ok: false, texto: "No se pudo crear el usuario: " + error.message });
@@ -940,7 +1148,7 @@ function AdminUsersScreen() {
     <div className="report-page">
       <div className="report-card narrow">
         <div className="report-header">
-          <h2>👤 Crear usuario</h2>
+          <h2><Icon nombre="usuario" />Crear usuario</h2>
         </div>
         <form className="admin-form" onSubmit={guardar}>
           <label>
@@ -1044,7 +1252,7 @@ function AddStockForm() {
       setMensaje({
         ok: true,
         texto:
-          `✓ ${actualizado.nombre}: existencia ${actualizado.stock_actual}, ` +
+          `${actualizado.nombre}: existencia ${actualizado.stock_actual}, ` +
           `precio con IVA ${formatoColones(actualizado.precio_con_iva)}, ` +
           `utilidad ${actualizado.utilidad}%, total ${formatoColones(actualizado.total)}`
       });
@@ -1060,7 +1268,7 @@ function AddStockForm() {
   return (
     <div className="report-card">
       <div className="report-header">
-        <h2>➕ Agregar cantidad o cambiar precio</h2>
+        <h2><Icon nombre="mas" />Agregar cantidad o cambiar precio</h2>
       </div>
 
       {!producto && (
@@ -1182,7 +1390,7 @@ function NewProductForm() {
         utilidad: Number(form.utilidad) || 0,
         stock_actual: Number(form.stock_actual) || 0
       });
-      setMensaje({ ok: true, texto: `✓ Producto "${producto.nombre}" creado` });
+      setMensaje({ ok: true, texto: `Producto "${producto.nombre}" creado` });
       setForm(vacio);
     } catch (error) {
       setMensaje({ ok: false, texto: "No se pudo crear el producto: " + error.message });
@@ -1194,7 +1402,7 @@ function NewProductForm() {
   return (
     <div className="report-card">
       <div className="report-header">
-        <h2>📦 Nuevo producto</h2>
+        <h2><Icon nombre="caja" />Nuevo producto</h2>
       </div>
       <form className="admin-form" onSubmit={guardar}>
         <label>
@@ -1234,6 +1442,86 @@ function NewProductForm() {
   );
 }
 
+const formatoTamano = (bytes) => (bytes / 1024 / 1024).toFixed(1) + " MB";
+
+// "2026-10-07_14-30-05" -> "2026-10-07 14:30"
+const formatoRespaldo = (nombre) => nombre.slice(0, 10) + " " + nombre.slice(11, 16).replace("-", ":");
+
+function AdminBackupsScreen() {
+  const { datos, error, cargando, recargar } = useDatosPorFecha(apiService.getBackups, null);
+  const [guardando, setGuardando] = useState(false);
+  const respaldos = datos?.respaldos || [];
+
+  const respaldar = async () => {
+    setGuardando(true);
+    try {
+      const respaldo = await apiService.createBackup();
+      notify("ok", `Respaldo creado: ${formatoRespaldo(respaldo.nombre)}`);
+      recargar();
+    } catch (err) {
+      notify("error", "No se pudo crear el respaldo: " + err.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-page">
+      <div className="report-card medium">
+        <div className="report-header">
+          <h2><Icon nombre="respaldo" />Respaldos</h2>
+          <div className="report-toolbar">
+            {escritorio && (
+              <button className="btn-secondary" onClick={() => escritorio.abrirCarpetaDatos()}>
+                Abrir carpeta de datos
+              </button>
+            )}
+            <button className="btn-refresh" onClick={respaldar} disabled={guardando}>
+              {guardando ? "Respaldando..." : "Respaldar ahora"}
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="report-error">No se pudieron cargar los respaldos: {error}</p>}
+
+        {datos && (
+          <p className="backup-info">
+            Se hace un respaldo automático cada día con los usuarios, las ventas y el archivo de
+            productos. Se conservan los últimos {datos.maximo} en:
+            <br />
+            <strong>{datos.carpeta}</strong>
+          </p>
+        )}
+
+        {datos && !cargando && respaldos.length === 0 && (
+          <p className="report-empty">Todavía no hay respaldos</p>
+        )}
+
+        {respaldos.length > 0 && (
+          <div className="report-table-wrapper">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th className="num">Tamaño</th>
+                </tr>
+              </thead>
+              <tbody>
+                {respaldos.map((respaldo) => (
+                  <tr key={respaldo.nombre}>
+                    <td>{formatoRespaldo(respaldo.nombre)}</td>
+                    <td className="num">{formatoTamano(respaldo.tamano)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ==========================================
 // COMPONENTE: Principal (POS)
 // ==========================================
@@ -1258,6 +1546,10 @@ function POSScreen({ onLogout }) {
   }, []);
 
   const esAdmin = usuario?.rol === "admin";
+  const enInicio = view === "inicio";
+
+  // F2 vuelve a Inicio (el buscador toma el cursor)
+  useAtajo("F2", () => setView("inicio"));
 
   // Con IVA, según la tarifa de cada producto
   const cartTotal = cartItems.reduce(
@@ -1266,7 +1558,7 @@ function POSScreen({ onLogout }) {
   );
 
   // Actualización funcional: dos lecturas seguidas del lector no se pisan
-  const handleAddToCart = (product) => {
+  const handleAddToCart = useCallback((product) => {
     setCartItems((items) =>
       items.some((item) => item.id === product.id)
         ? items.map((item) =>
@@ -1274,7 +1566,10 @@ function POSScreen({ onLogout }) {
           )
         : [...items, { ...product, cantidad: 1 }]
     );
-  };
+  }, []);
+
+  // Lecturas del lector con el cursor fuera del buscador
+  useLectorGlobal(enInicio, (codigo) => agregarPorCodigo(codigo, handleAddToCart));
 
   const handleRemoveFromCart = (productId) => {
     setCartItems(cartItems.filter((item) => item.id !== productId));
@@ -1294,7 +1589,7 @@ function POSScreen({ onLogout }) {
 
   const handlePaymentComplete = async (paymentData) => {
     if (cartItems.length === 0) {
-      alert("Carrito vacío");
+      notify("error", "Carrito vacío");
       return;
     }
 
@@ -1316,15 +1611,14 @@ function POSScreen({ onLogout }) {
       setLastSale(response);
       setCartItems([]); // Limpiar carrito
 
-      // Mostrar resumen
-      setTimeout(() => {
-        alert(
-          `✓ Venta completada\nVenta #: ${response.numeroVenta}\nTotal: ₡${response.total.toLocaleString()}\nEstado: ${response.estado}`
-        );
-      }, 500);
+      notify(
+        "ok",
+        `Venta completada · Total ${formatoColones(response.total)}` +
+          (response.vuelto > 0 ? ` · Vuelto ${formatoColones(response.vuelto)}` : "")
+      );
       return true;
     } catch (error) {
-      alert("Error procesando venta: " + error.message);
+      notify("error", "Error procesando venta: " + error.message);
       return false;
     } finally {
       setIsProcessing(false);
@@ -1353,9 +1647,21 @@ function POSScreen({ onLogout }) {
           ))}
           {esAdmin && <AdminMenu view={view} onSelect={setView} />}
         </nav>
-        <button className="btn-logout" onClick={onLogout}>
-          Cerrar Sesión
-        </button>
+        <div className="header-actions">
+          {escritorio && (
+            <button
+              className="btn-icon"
+              title="Pantalla completa (F11)"
+              aria-label="Pantalla completa"
+              onClick={() => escritorio.pantallaCompleta()}
+            >
+              <Icon nombre="pantalla" size={18} />
+            </button>
+          )}
+          <button className="btn-logout" onClick={onLogout}>
+            Cerrar sesión
+          </button>
+        </div>
       </header>
 
       {view === "productos" && <ProductsScreen />}
@@ -1363,11 +1669,12 @@ function POSScreen({ onLogout }) {
       {view === "cierre" && <CashClosingScreen esAdmin={esAdmin} />}
       {esAdmin && view === "admin-usuarios" && <AdminUsersScreen />}
       {esAdmin && view === "admin-inventario" && <AdminInventoryScreen />}
+      {esAdmin && view === "admin-respaldos" && <AdminBackupsScreen />}
 
       {/* Inicio queda montado (oculto) para no perder el carrito al cambiar de vista */}
       <div className="pos-content" style={view === "inicio" ? undefined : { display: "none" }}>
         <div className="pos-left">
-          <ProductSearch onAddToCart={handleAddToCart} />
+          <ProductSearch onAddToCart={handleAddToCart} activo={enInicio} />
         </div>
 
         <div className="pos-right">
@@ -1382,12 +1689,13 @@ function POSScreen({ onLogout }) {
               cartTotal={cartTotal}
               onPaymentComplete={handlePaymentComplete}
               isProcessing={isProcessing}
+              activo={enInicio}
             />
           )}
 
           {lastSale && (
             <div className="last-sale-info">
-              <h3>✓ Última venta</h3>
+              <h3><Icon nombre="check" size={16} />Última venta</h3>
               <p>Venta #{lastSale.numeroVenta}</p>
               <p>Total: ₡{lastSale.total.toLocaleString()}</p>
               <p>Comprobante: {lastSale.comprobante?.estado}</p>
@@ -1416,6 +1724,7 @@ function App() {
 
   return (
     <div className="app">
+      <Toasts />
       {isLoggedIn ? (
         <POSScreen onLogout={logout} />
       ) : (

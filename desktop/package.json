@@ -1,0 +1,58 @@
+{
+  "name": "pos-costa-rica",
+  "productName": "POS Costa Rica",
+  "version": "1.0.0-beta.2",
+  "description": "Punto de venta para Costa Rica - aplicación de escritorio",
+  "author": "POS Costa Rica",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron scripts/make-icon.js",
+    "build:frontend": "npm --prefix ../frontend run build",
+    "dist": "npm run build:frontend && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^37.10.3",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cr.pos.costarica",
+    "productName": "POS Costa Rica",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "package.json",
+          "src/**/*",
+          "node_modules/**/*",
+          "!src/.env",
+          "!**/*.p12"
+        ]
+      },
+      {
+        "from": "../frontend/build",
+        "to": "frontend"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "POS Costa Rica"
+    }
+  }
+}

@@ -323,3 +323,26 @@ Una vez el POS funcione localmente:
 ¡Listo! Tenés un POS funcional. Ahora es solo agregar las capas de Hacienda, autenticación real y casos de uso más complejos.
 
 ¿Preguntas? Revisa POS_ESQUELETO.md para entender la arquitectura en detalle.
+
+---
+
+## 🖥️ Aplicación de escritorio (beta)
+
+La carpeta `desktop/` empaqueta el backend y el frontend en una app de Windows (Electron).
+
+```bash
+cd desktop
+npm install
+npm run dist
+```
+
+El instalador queda en `desktop/dist/POS Costa Rica Setup <versión>.exe`.
+Para probar sin instalar: `npm run build:frontend` y luego `npm start`.
+
+Los datos de cada cliente quedan en `%APPDATA%\POS Costa Rica\datos`
+(menú **Archivo → Abrir carpeta de datos**):
+
+- `.env` — se crea en el primer arranque con su propia `JWT_SECRET` y `ADMIN_PASSWORD`;
+  ahí se completan la cédula y el nombre comercial del negocio.
+- `database/FacInve.DBF` — hay que copiarlo; `pos.db` y `hacienda.db` se crean solos.
+- `comprobantes/` — XML generados.

@@ -8,6 +8,10 @@ node_modules/
 # Datos de cada cliente
 backend/database/
 backend/comprobantes/
+backend/respaldos/
 
 # Build del frontend
 frontend/build/
+
+# Instaladores de la app de escritorio
+desktop*/dist/
