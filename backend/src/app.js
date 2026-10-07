@@ -357,7 +357,10 @@ const productService = {
 
   updateStock: (productId, cantidad) => inventario.descontarStock(productId, cantidad),
 
-  addStock: (productId, cantidad) => inventario.ajustarStock(productId, cantidad)
+  addStock: (productId, cantidad) => inventario.ajustarStock(productId, cantidad),
+
+  updatePrice: (productId, precioConIva, utilidad) =>
+    inventario.actualizarPrecio(productId, precioConIva, utilidad)
 };
 
 // SERVICE: Ventas
@@ -481,11 +484,11 @@ const facturacionService = {
   buildXML: (venta, detalles) => {
     const haciendaConfig = require('./config/hacienda');
     const XMLValidator = require('./utils/xmlValidator');
-    
+
     // Información de la venta
     const fechaEmision = new Date().toISOString();
     const tipoComprobante = '04'; // Tiquete electrónico
-    
+
     // Construir detalles XML
     let detallesXML = '';
     detalles.forEach((detalle, index) => {
@@ -494,7 +497,7 @@ const facturacionService = {
       const subtotal = parseFloat(detalle.subtotal) || 0;
       const iva = parseFloat(detalle.iva) || 0;
       const tarifa = detalle.tarifa_iva ?? 13;
-      
+
       detallesXML += `
     <LineaDetalle>
       <NumeroLineaDetalle>${index + 1}</NumeroLineaDetalle>
@@ -551,7 +554,7 @@ const facturacionService = {
     // VALIDAR XML
     const validacion = XMLValidator.validar(xml);
     console.log(`\n📋 Validación XML v4.4: ${validacion.válido ? '✓ VÁLIDO' : '❌ INVÁLIDO'}`);
-    
+
     if (!validacion.válido) {
       console.log('Errores encontrados:');
       validacion.errores.forEach(error => console.log(`  - ${error}`));
@@ -572,7 +575,7 @@ const facturacionService = {
   sendToHacienda: async (xmlFirmado, claveHacienda) => {
     // Por ahora: simula respuesta (PASO 3 lo hace real)
     console.log("📤 [MOCK] Enviando a Hacienda:", claveHacienda);
-    
+
     return new Promise((resolve) => {
       setTimeout(() => {
         resolve({
@@ -589,14 +592,14 @@ const facturacionService = {
 const reportService = {
   getCashClosing: async () => {
     const ventas = await salesService.getDailySales();
-    
+
     let efectivo = 0, sinpe = 0, tarjeta = 0, totalIVA = 0;
 
     ventas.forEach((venta) => {
       if (venta.metodo_pago === "cash") efectivo += venta.total_venta;
       else if (venta.metodo_pago === "sinpe") sinpe += venta.total_venta;
       else if (venta.metodo_pago === "tarjeta") tarjeta += venta.total_venta;
-      
+
       totalIVA += venta.total_iva;
     });
 
@@ -621,7 +624,7 @@ const reportService = {
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No autorizado" });
-  
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.usuarioId = decoded.usuarioId;
@@ -641,13 +644,13 @@ const authMiddleware = (req, res, next) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    
+
     if (!username || !password) {
       return res.status(400).json({ error: "Usuario y contraseña requeridos" });
     }
 
     const usuario = await userService.getUserByUsername(username);
-    
+
     if (!usuario) {
       return res.status(401).json({ error: "Usuario no encontrado" });
     }
@@ -700,7 +703,7 @@ app.post("/api/auth/register", authMiddleware, async (req, res) => {
     }
 
     const usuario = await userService.createUser(username, password, email, rol);
-    
+
     await registrarAuditoria(req.usuarioId, "USUARIO_CREADO", "usuarios", usuario.id, null, usuario);
 
     res.status(201).json(usuario);
@@ -748,37 +751,66 @@ app.post("/api/products", authMiddleware, async (req, res) => {
 
     const producto = productService.createProduct(req.body);
     await registrarAuditoria(req.usuarioId, "PRODUCTO_CREADO", "productos", producto.id, null, req.body);
-    
+
     res.status(201).json(producto);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Sumar existencias a un producto ya creado (solo admin)
+// Sumar existencias y/o cambiar precio y utilidad de un producto (solo admin)
 app.post("/api/products/:id/stock", authMiddleware, async (req, res) => {
   try {
     if (req.rol !== "admin") {
       return res.status(403).json({ error: "No tienes permiso" });
     }
 
-    const cantidad = Number(req.body?.cantidad);
-    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+    const { precio_con_iva, utilidad } = req.body || {};
+    const cantidad = Number(req.body?.cantidad ?? 0);
+    const cambiaPrecio = precio_con_iva !== undefined || utilidad !== undefined;
+
+    if (!Number.isFinite(cantidad) || cantidad < 0) {
       return res.status(400).json({ error: "Cantidad inválida" });
     }
+    if (cantidad === 0 && !cambiaPrecio) {
+      return res.status(400).json({ error: "No hay cambios que guardar" });
+    }
 
-    const anterior = productService.getProductById(req.params.id);
-    if (!anterior) return res.status(404).json({ error: "Producto no encontrado" });
-    const stockAnterior = anterior.stock_actual;
+    let producto = productService.getProductById(req.params.id);
+    if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
+    const anterior = {
+      stock_actual: producto.stock_actual,
+      precio_con_iva: producto.precio_con_iva,
+      utilidad: producto.utilidad,
+      total: producto.total
+    };
 
-    const producto = productService.addStock(req.params.id, cantidad);
+    // El precio va primero: si es inválido no se toca la existencia
+    if (cambiaPrecio) {
+      producto = productService.updatePrice(
+        producto.id,
+        Number(precio_con_iva ?? producto.precio_con_iva),
+        Number(utilidad ?? producto.utilidad)
+      );
+    }
+    if (cantidad > 0) {
+      producto = productService.addStock(producto.id, cantidad);
+    }
+
     await registrarAuditoria(
       req.usuarioId,
-      "STOCK_AGREGADO",
+      cambiaPrecio ? "PRODUCTO_ACTUALIZADO" : "STOCK_AGREGADO",
       "productos",
       producto.id,
-      { stock_actual: stockAnterior },
-      { codigo: producto.codigo, cantidad, stock_actual: producto.stock_actual }
+      anterior,
+      {
+        codigo: producto.codigo,
+        cantidad,
+        stock_actual: producto.stock_actual,
+        precio_con_iva: producto.precio_con_iva,
+        utilidad: producto.utilidad,
+        total: producto.total
+      }
     );
 
     res.json(producto);
@@ -791,16 +823,16 @@ app.post("/api/products/:id/stock", authMiddleware, async (req, res) => {
 app.post("/api/sales", authMiddleware, async (req, res) => {
   try {
     const venta = await salesService.createSale(req.body, req.usuarioId);
-    
+
     // Obtener detalles completos
     const ventaCompleta = await salesService.getSaleById(venta.ventaId);
 
     // Generar comprobante XML
     const xmlResult = facturacionService.buildXML(
-      { 
-        total_subtotal: venta.subtotal, 
-        total_iva: venta.iva, 
-        total_venta: venta.total 
+      {
+        total_subtotal: venta.subtotal,
+        total_iva: venta.iva,
+        total_venta: venta.total
       },
       ventaCompleta.detalles
     );
@@ -821,10 +853,10 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
     // Guardar XML como ARCHIVO en disco
     const hoy = new Date().toISOString().split('T')[0];
     const carpetaComprobantes = path.join(COMPROBANTES_PATH, hoy);
-    
+
     // Crear carpeta si no existe
     mkdirp.sync(carpetaComprobantes);
-    
+
     // Guardar archivo XML
     const nombreArchivo = `${venta.numeroVenta}-xml.xml`;
     const rutaXML = path.join(carpetaComprobantes, nombreArchivo);
@@ -857,10 +889,17 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
 });
 
 // Ventas de un día (por defecto hoy): /api/sales?fecha=YYYY-MM-DD
+// Ventas de un día que el usuario puede ver: el admin todas (o las de
+// ?usuario_id=); los demás solo las que hicieron ellos
+async function ventasVisibles(req) {
+  const ventas = await salesService.getDailySales(req.query.fecha);
+  const usuarioId = req.rol === "admin" ? req.query.usuario_id : req.usuarioId;
+  return usuarioId ? ventas.filter((venta) => venta.usuario_id === Number(usuarioId)) : ventas;
+}
+
 app.get("/api/sales", authMiddleware, async (req, res) => {
   try {
-    const ventas = await salesService.getDailySales(req.query.fecha);
-    res.json(ventas);
+    res.json(await ventasVisibles(req));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -869,37 +908,72 @@ app.get("/api/sales", authMiddleware, async (req, res) => {
 app.get("/api/sales/:id", authMiddleware, async (req, res) => {
   try {
     const venta = await salesService.getSaleById(req.params.id);
-    if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+    const esPropia = venta && venta.usuario_id === req.usuarioId;
+    if (!venta || (req.rol !== "admin" && !esPropia)) {
+      return res.status(404).json({ error: "Venta no encontrada" });
+    }
     res.json(venta);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
+// USUARIOS (solo admin): lista para los filtros de administración
+app.get("/api/users", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+    res.json(await dbAll(db, `SELECT id, username, rol FROM usuarios WHERE activo = 1 ORDER BY username`));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // REPORTES
+// Totales de un grupo de ventas, por método de pago
+function resumirVentas(ventas) {
+  let efectivo = 0, sinpe = 0, tarjeta = 0, totalIVA = 0;
+
+  ventas.forEach((venta) => {
+    if (venta.metodo_pago === "cash") efectivo += venta.total_venta;
+    else if (venta.metodo_pago === "sinpe") sinpe += venta.total_venta;
+    else if (venta.metodo_pago === "tarjeta") tarjeta += venta.total_venta;
+
+    totalIVA += venta.total_iva;
+  });
+
+  return {
+    totalVentas: ventas.length,
+    detallePagos: { efectivo, sinpe, tarjeta },
+    total: efectivo + sinpe + tarjeta,
+    totalIVA,
+    montoNeto: (efectivo + sinpe + tarjeta) - totalIVA
+  };
+}
+
+// Cierre de un día. El cajero recibe solo el de sus ventas; el admin el
+// general con desglose por usuario, o el de un usuario con ?usuario_id=
 app.get("/api/reports/cash-closing", authMiddleware, async (req, res) => {
   try {
-    const { fecha } = req.query;
-    const ventas = await salesService.getDailySales(fecha);
-    
-    let efectivo = 0, sinpe = 0, tarjeta = 0, totalIVA = 0;
+    const { fecha, usuario_id } = req.query;
+    const esAdmin = req.rol === "admin";
+    const ventas = await ventasVisibles(req);
 
-    ventas.forEach((venta) => {
-      if (venta.metodo_pago === "cash") efectivo += venta.total_venta;
-      else if (venta.metodo_pago === "sinpe") sinpe += venta.total_venta;
-      else if (venta.metodo_pago === "tarjeta") tarjeta += venta.total_venta;
-      
-      totalIVA += venta.total_iva;
-    });
+    const cierre = { fecha: fecha || fechaLocalHoy(), ...resumirVentas(ventas) };
 
-    const cierre = {
-      fecha: fecha || fechaLocalHoy(),
-      totalVentas: ventas.length,
-      detallePagos: { efectivo, sinpe, tarjeta },
-      total: efectivo + sinpe + tarjeta,
-      totalIVA,
-      montoNeto: (efectivo + sinpe + tarjeta) - totalIVA
-    };
+    if (esAdmin && !usuario_id) {
+      const grupos = new Map();
+      for (const venta of ventas) {
+        if (!grupos.has(venta.usuario_id)) grupos.set(venta.usuario_id, []);
+        grupos.get(venta.usuario_id).push(venta);
+      }
+      cierre.porUsuario = [...grupos].map(([usuarioId, grupo]) => ({
+        usuario_id: usuarioId,
+        username: grupo[0].username || "(sin usuario)",
+        ...resumirVentas(grupo)
+      }));
+    }
 
     res.json(cierre);
   } catch (error) {
@@ -909,7 +983,7 @@ app.get("/api/reports/cash-closing", authMiddleware, async (req, res) => {
 
 // HEALTH CHECK
 app.get("/health", (req, res) => {
-  res.json({ 
+  res.json({
     status: "ok",
     bd: "conectada",
     timestamp: new Date(),

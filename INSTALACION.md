@@ -174,7 +174,8 @@ curl -X POST http://localhost:5000/api/products \
     "codigo_barras": "001",
     "nombre": "Arroz Premium",
     "codigo_cabys": "6201",
-    "precio_venta": 5000,
+    "precio_con_iva": 5000,
+    "utilidad": 30,
     "stock_actual": 100
   }'
 ```

@@ -11,8 +11,7 @@ const CODIFICACION = "cp850";
 const CAMPOS_REQUERIDOS = ["CODIGO", "DESCRIP", "CANT", "VALORUNI"];
 const MAX_RESULTADOS = 50;
 
-// Código de tarifa de IVA de Hacienda según el porcentaje
-const CODIGO_TARIFA = { 0: "01", 1: "02", 2: "03", 4: "04", 13: "08" };
+const redondear = (valor) => Math.round(valor * 100) / 100;
 
 class InventarioDBF {
   constructor(ruta) {
@@ -68,6 +67,23 @@ class InventarioDBF {
       if (this.campos.ACTIVO && texto(inicio, "ACTIVO") === "0") continue;
 
       const codigo = texto(inicio, "CODIGO");
+      const precioVenta = numero(inicio, "VALORUNI");
+      const impuesto = texto(inicio, "PAGA_IV") === "S" ? numero(inicio, "PORCIV") : 0;
+
+      // Régimen simplificado: precio con IVA (lo que cuesta el producto) +
+      // utilidad = total (lo que paga el cliente). Si el DBF trae COSTO, la
+      // utilidad sale de costo y precio; si no, se usa el campo UTILIDAD.
+      const costo = numero(inicio, "COSTO");
+      const total = redondear(precioVenta * (1 + impuesto / 100));
+      const utilidadCampo = numero(inicio, "UTILIDAD");
+      const cuadra = Math.abs(costo * (1 + utilidadCampo / 100) - precioVenta) < 0.011;
+      const utilidad = costo > 0 && !cuadra
+        ? redondear((precioVenta / costo - 1) * 100)
+        : utilidadCampo;
+      const precioConIva = costo > 0
+        ? redondear(costo * (1 + impuesto / 100))
+        : redondear(total / (1 + utilidad / 100));
+
       const producto = {
         id: i + 1,
         codigo,
@@ -75,9 +91,12 @@ class InventarioDBF {
         nombre: texto(inicio, "DESCRIP"),
         descripcion: texto(inicio, "NOTAS") || null,
         codigo_cabys: texto(inicio, "ID_CDPRSE"),
-        // VALORUNI es el precio sin IVA
-        precio_venta: numero(inicio, "VALORUNI"),
-        impuesto_venta: texto(inicio, "PAGA_IV") === "S" ? numero(inicio, "PORCIV") : 0,
+        precio_con_iva: precioConIva,
+        utilidad,
+        total,
+        // VALORUNI es el precio sin IVA; las ventas calculan con estos dos
+        precio_venta: precioVenta,
+        impuesto_venta: impuesto,
         stock_actual: numero(inicio, "CANT"),
         stock_minimo: numero(inicio, "MINIMO"),
         unidad_medida: texto(inicio, "UNID_MED") || "Unid",
@@ -147,7 +166,7 @@ class InventarioDBF {
     const producto = this.porId.get(Number(id));
     if (!producto) throw new Error(`Producto ${id} no encontrado`);
 
-    const nuevoStock = Math.round((producto.stock_actual + cantidad) * 100) / 100;
+    const nuevoStock = redondear(producto.stock_actual + cantidad);
     const campo = this.campos.CANT;
     const posicion = this.tamEncabezado + (producto.id - 1) * this.tamRegistro + campo.desplazamiento;
     this._escribir([[posicion, this._codificarNumero("CANT", nuevoStock)]]);
@@ -155,19 +174,52 @@ class InventarioDBF {
     return producto;
   }
 
+  // Cambia el precio con IVA y la utilidad de un producto. En el DBF el costo
+  // y el precio de venta se guardan sin IVA, así que se le quita la tarifa del
+  // producto antes de escribir.
+  actualizarPrecio(id, precioConIva, utilidad) {
+    this._sincronizar();
+    const producto = this.porId.get(Number(id));
+    if (!producto) throw new Error(`Producto ${id} no encontrado`);
+    if (!Number.isFinite(precioConIva) || precioConIva < 0) throw new Error("Precio inválido");
+    if (!Number.isFinite(utilidad) || utilidad < 0) throw new Error("Utilidad inválida");
+    for (const campo of ["COSTO", "UTILIDAD"]) {
+      if (!this.campos[campo]) throw new Error(`${this.ruta} no tiene el campo ${campo}`);
+    }
+
+    const costo = redondear(precioConIva / (1 + producto.impuesto_venta / 100));
+    const valores = {
+      COSTO: costo,
+      UTILIDAD: utilidad,
+      VALORUNI: redondear(costo * (1 + utilidad / 100))
+    };
+    const inicio = this.tamEncabezado + (producto.id - 1) * this.tamRegistro;
+    this._escribir(
+      Object.entries(valores).map(([campo, valor]) => [
+        inicio + this.campos[campo].desplazamiento,
+        this._codificarNumero(campo, valor)
+      ])
+    );
+
+    this.cargar();
+    return this.porId.get(producto.id);
+  }
+
   // Agrega un registro nuevo al final del DBF
   agregar(data) {
     this._sincronizar();
     const codigo = String(data.codigo_barras ?? "").trim();
     const nombre = String(data.nombre ?? "").trim();
-    const precio = Number(data.precio_venta);
+    const precioConIva = Number(data.precio_con_iva);
+    const utilidad = Number(data.utilidad ?? 0);
     if (!codigo || !nombre) throw new Error("Código y nombre son requeridos");
-    if (!Number.isFinite(precio) || precio < 0) throw new Error("Precio inválido");
+    if (!Number.isFinite(precioConIva) || precioConIva < 0) throw new Error("Precio inválido");
+    if (!Number.isFinite(utilidad) || utilidad < 0) throw new Error("Utilidad inválida");
     if (this.productos.some((p) => p.codigo === codigo || p.codigo_barras === codigo)) {
       throw new Error(`Ya existe un producto con el código ${codigo}`);
     }
 
-    const impuesto = data.impuesto_venta === undefined ? 13 : Number(data.impuesto_venta) || 0;
+    // El precio ya trae el IVA: se guarda como costo y la venta no suma impuesto
     const valores = {
       CODIGO: codigo,
       COD_BARRAS: codigo,
@@ -175,14 +227,16 @@ class InventarioDBF {
       NOTAS: data.descripcion || "",
       ID_CDPRSE: data.codigo_cabys || "",
       CANT: Number(data.stock_actual) || 0,
-      VALORUNI: precio,
-      PAGA_IV: impuesto > 0 ? "S" : "N",
-      PORCIV: impuesto,
+      COSTO: precioConIva,
+      UTILIDAD: utilidad,
+      VALORUNI: redondear(precioConIva * (1 + utilidad / 100)),
+      PAGA_IV: "N",
+      PORCIV: 0,
       MINIMO: Number(data.stock_minimo) || 0,
       ACTIVO: 1,
       UNID_MED: "Unid",
       CD_IMPUEST: "01",
-      CDTARI_IVA: CODIGO_TARIFA[impuesto] || "08"
+      CDTARI_IVA: "01"
     };
 
     const registro = Buffer.alloc(this.tamRegistro + 1, 0x20);
