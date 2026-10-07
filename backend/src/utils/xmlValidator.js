@@ -59,7 +59,8 @@ class XMLValidator {
         errores.push('DetalleServicios: Debe haber al menos una LineaDetalle');
       }
 
-      detalles.forEach((detalle, index) => {
+      // El NodeList de xmldom no tiene forEach
+      Array.from({ length: detalles.length }, (_, i) => detalles.item(i)).forEach((detalle, index) => {
         const camposObligatorios = [
           'NumeroLineaDetalle',
           'CodigoActividad',

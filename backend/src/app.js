@@ -12,7 +12,8 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
 const mkdirp = require("mkdirp");
-require('dotenv').config();
+// El .env vive junto a este archivo, no en el directorio desde donde se ejecuta
+require('dotenv').config({ path: path.join(__dirname, ".env") });
 
 // ==========================================
 // 1. CONFIGURACIÓN
@@ -38,6 +39,11 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   } else {
     console.log(`✓ BD conectada: ${DB_PATH}`);
   }
+});
+
+// Sin este listener, un error en un db.run() sin callback tumba el proceso
+db.on("error", (err) => {
+  console.error("❌ Error de BD:", err.message);
 });
 
 // ==========================================
@@ -140,6 +146,17 @@ function initializeDatabase() {
       )
     `);
 
+    // Migración: BDs creadas antes de que existiera la columna ruta_archivo
+    db.all(`PRAGMA table_info(comprobantes)`, (err, columnas) => {
+      if (err) return console.error("❌ Error revisando schema:", err.message);
+      if (!columnas.some((c) => c.name === "ruta_archivo")) {
+        db.run(`ALTER TABLE comprobantes ADD COLUMN ruta_archivo TEXT`, (err) => {
+          if (err) console.error("❌ Error migrando comprobantes:", err.message);
+          else console.log("✓ Migración: columna ruta_archivo agregada");
+        });
+      }
+    });
+
     // Tabla de auditoría
     db.run(`
       CREATE TABLE IF NOT EXISTS auditoria (
@@ -177,6 +194,49 @@ function registrarAuditoria(usuarioId, accion, tabla, registroId, datosAntiguos,
       }
     );
   });
+}
+
+// Fecha de hoy (YYYY-MM-DD) en hora local del servidor
+function fechaLocalHoy() {
+  const d = new Date();
+  return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
+    .map((n) => String(n).padStart(2, "0"))
+    .join("-");
+}
+
+// db.run como promesa
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  });
+}
+
+// Escapar texto para XML
+function escapeXML(valor) {
+  return String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+// Clave de 50 dígitos (MOCK): debe ser única por comprobante
+function generarClaveHacienda(ventaId) {
+  const d = new Date();
+  const fecha = [d.getDate(), d.getMonth() + 1, d.getFullYear() % 100]
+    .map((n) => String(n).padStart(2, "0"))
+    .join("");
+  const cedula = String(process.env.CEDULA_EMISOR || "3101234567")
+    .replace(/\D/g, "")
+    .padStart(12, "0")
+    .slice(-12);
+  const consecutivo = "00100001" + "04" + String(ventaId).padStart(10, "0").slice(-10);
+  const seguridad = String(Math.floor(Math.random() * 1e8)).padStart(8, "0");
+  return "506" + fecha + cedula + consecutivo + "1" + seguridad;
 }
 
 // ==========================================
@@ -289,82 +349,77 @@ const productService = {
 // SERVICE: Ventas
 const salesService = {
   createSale: async (saleData, usuarioId) => {
-    const { items, medioPago, montoRecibido, clientId, notas } = saleData;
+    const { items, medioPago, montoRecibido, clientId, notas } = saleData || {};
 
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Calcular totales
-        let subtotal = 0, totalIva = 0;
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error("La venta no tiene productos");
+    }
 
-        for (const item of items) {
-          const producto = await productService.getProductById(item.productId);
-          if (!producto) throw new Error(`Producto ${item.productId} no encontrado`);
-          
-          const itemSubtotal = producto.precio_venta * item.cantidad;
-          const itemIva = itemSubtotal * (producto.impuesto_venta / 100);
-          subtotal += itemSubtotal;
-          totalIva += itemIva;
-        }
+    // Calcular totales
+    let subtotal = 0, totalIva = 0;
+    const lineas = [];
 
-        const totalVenta = subtotal + totalIva;
-        const numeroVenta = `VENTA-${Date.now()}`;
-
-        // Guardar venta en transacción
-        db.run(
-          `INSERT INTO ventas (numero_venta, usuario_id, cliente_id, total_subtotal, total_iva, total_venta, metodo_pago, notas)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [numeroVenta, usuarioId, clientId, subtotal, totalIva, totalVenta, medioPago, notas],
-          async function (err) {
-            if (err) return reject(err);
-
-            const ventaId = this.lastID;
-
-            // Guardar detalles y actualizar stock
-            try {
-              for (const item of items) {
-                const producto = await productService.getProductById(item.productId);
-                const subtotalItem = producto.precio_venta * item.cantidad;
-                const ivaItem = subtotalItem * (producto.impuesto_venta / 100);
-
-                // Insertar detalle
-                db.run(
-                  `INSERT INTO detalle_ventas (venta_id, producto_id, cantidad, precio_unitario, subtotal, iva)
-                   VALUES (?, ?, ?, ?, ?, ?)`,
-                  [ventaId, item.productId, item.cantidad, producto.precio_venta, subtotalItem, ivaItem]
-                );
-
-                // Actualizar stock
-                await productService.updateStock(item.productId, item.cantidad);
-              }
-
-              // Registrar en auditoría
-              await registrarAuditoria(
-                usuarioId,
-                "VENTA_CREADA",
-                "ventas",
-                ventaId,
-                null,
-                { numeroVenta, totalVenta, medioPago }
-              );
-
-              resolve({
-                ventaId,
-                numeroVenta,
-                subtotal,
-                iva: totalIva,
-                total: totalVenta,
-                vuelto: montoRecibido - totalVenta,
-                estado: "completada"
-              });
-            } catch (error) {
-              reject(error);
-            }
-          }
-        );
-      } catch (error) {
-        reject(error);
+    for (const item of items) {
+      const cantidad = Number(item.cantidad);
+      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+        throw new Error(`Cantidad inválida para el producto ${item.productId}`);
       }
-    });
+
+      const producto = await productService.getProductById(item.productId);
+      if (!producto) throw new Error(`Producto ${item.productId} no encontrado`);
+
+      const itemSubtotal = producto.precio_venta * cantidad;
+      const itemIva = itemSubtotal * (producto.impuesto_venta / 100);
+      subtotal += itemSubtotal;
+      totalIva += itemIva;
+      lineas.push({
+        productId: producto.id,
+        cantidad,
+        precio: producto.precio_venta,
+        subtotal: itemSubtotal,
+        iva: itemIva
+      });
+    }
+
+    const totalVenta = subtotal + totalIva;
+    const numeroVenta = `VENTA-${Date.now()}`;
+
+    const { lastID: ventaId } = await dbRun(
+      `INSERT INTO ventas (numero_venta, usuario_id, cliente_id, total_subtotal, total_iva, total_venta, metodo_pago, notas)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [numeroVenta, usuarioId, clientId, subtotal, totalIva, totalVenta, medioPago, notas]
+    );
+
+    // Guardar detalles y actualizar stock
+    for (const linea of lineas) {
+      await dbRun(
+        `INSERT INTO detalle_ventas (venta_id, producto_id, cantidad, precio_unitario, subtotal, iva)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [ventaId, linea.productId, linea.cantidad, linea.precio, linea.subtotal, linea.iva]
+      );
+      await productService.updateStock(linea.productId, linea.cantidad);
+    }
+
+    // Registrar en auditoría
+    await registrarAuditoria(
+      usuarioId,
+      "VENTA_CREADA",
+      "ventas",
+      ventaId,
+      null,
+      { numeroVenta, totalVenta, medioPago }
+    );
+
+    const recibido = Number(montoRecibido);
+    return {
+      ventaId,
+      numeroVenta,
+      subtotal,
+      iva: totalIva,
+      total: totalVenta,
+      vuelto: Number.isFinite(recibido) ? Math.max(recibido - totalVenta, 0) : 0,
+      estado: "completada"
+    };
   },
 
   getSaleById: (ventaId) => {
@@ -395,9 +450,15 @@ const salesService = {
 
   getDailySales: (fecha = null) => {
     return new Promise((resolve, reject) => {
-      const fechaFiltro = fecha || new Date().toISOString().split("T")[0];
+      // fecha se guarda en UTC: comparar por día local para que las ventas
+      // de la noche no caigan en el día siguiente
+      const fechaFiltro = fecha || fechaLocalHoy();
       db.all(
-        `SELECT * FROM ventas WHERE DATE(fecha) = ? ORDER BY fecha DESC`,
+        `SELECT v.*, DATETIME(v.fecha, 'localtime') AS fecha_local, u.username,
+                (SELECT COALESCE(SUM(dv.cantidad), 0) FROM detalle_ventas dv WHERE dv.venta_id = v.id) AS total_articulos
+         FROM ventas v
+         LEFT JOIN usuarios u ON v.usuario_id = u.id
+         WHERE DATE(v.fecha, 'localtime') = ? ORDER BY v.fecha DESC`,
         [fechaFiltro],
         (err, rows) => {
           if (err) reject(err);
@@ -431,12 +492,12 @@ const facturacionService = {
       <NumeroLineaDetalle>${index + 1}</NumeroLineaDetalle>
       <CodigoActividad>${haciendaConfig.codigoActividad}</CodigoActividad>
       <CodigoProducto>${detalle.producto_id}</CodigoProducto>
-      <DescripcionProducto>${detalle.nombre || 'Producto'}</DescripcionProducto>
+      <DescripcionProducto>${escapeXML(detalle.nombre || 'Producto')}</DescripcionProducto>
       <Cantidad>${cantidad}</Cantidad>
       <UnidadMedida>Unid</UnidadMedida>
       <PrecioUnitario>${precioUnitario.toFixed(2)}</PrecioUnitario>
       <Descuento>
-        <MontoDescuento>${(detalle.descuento || 0).toFixed(2)}</MontoDescuento>
+        <MontoDescuento>${(parseFloat(detalle.descuento) || 0).toFixed(2)}</MontoDescuento>
       </Descuento>
       <SubTotal>${subtotal.toFixed(2)}</SubTotal>
       <ImpuestoVentas>
@@ -454,7 +515,7 @@ const facturacionService = {
     <NumeroCedulaEmisor>${haciendaConfig.cedulaEmisor}</NumeroCedulaEmisor>
     <NumeroCedulaReceptor>N/A</NumeroCedulaReceptor>
     <ProveedorSistema>${haciendaConfig.cedulaEmisor}</ProveedorSistema>
-    <NombreComercial>${haciendaConfig.nombreComercial}</NombreComercial>
+    <NombreComercial>${escapeXML(haciendaConfig.nombreComercial)}</NombreComercial>
     <TipoComprobante>${tipoComprobante}</TipoComprobante>
     <FechaEmision>${fechaEmision}</FechaEmision>
     <Moneda>CRC</Moneda>
@@ -464,7 +525,7 @@ const facturacionService = {
     <Canton>${haciendaConfig.canton}</Canton>
     <Distrito>${haciendaConfig.distrito}</Distrito>
     <Barrio>${haciendaConfig.barrio}</Barrio>
-    <DireccionExacta>${haciendaConfig.direccionExacta}</DireccionExacta>
+    <DireccionExacta>${escapeXML(haciendaConfig.direccionExacta)}</DireccionExacta>
   </Encabezado>
   <DetalleServicio>${detallesXML}
   </DetalleServicio>
@@ -532,7 +593,7 @@ const reportService = {
     });
 
     return {
-      fecha: new Date().toISOString().split("T")[0],
+      fecha: fechaLocalHoy(),
       totalVentas: ventas.length,
       efectivo,
       sinpe,
@@ -701,8 +762,8 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
     // Firmar (próximo paso)
     const xmlFirmado = await facturacionService.signXML(xmlResult.xml);
 
-    // Generar clave de 50 dígitos (MOCK)
-    const claveHacienda = "506010120080622026123456789012345678901234";
+    // Generar clave de 50 dígitos (MOCK), única por venta
+    const claveHacienda = generarClaveHacienda(venta.ventaId);
 
     // Guardar XML como ARCHIVO en disco
     const hoy = new Date().toISOString().split('T')[0];
@@ -718,9 +779,9 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
     console.log(`✓ XML guardado en: ${rutaXML}`);
 
     // Guardar comprobante en BD
-    db.run(
-      `INSERT INTO comprobantes (venta_id, tipo_comprobante, clave_hacienda, xml_content, estado_hacienda, ruta_archivo)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+    await dbRun(
+      `INSERT INTO comprobantes (venta_id, tipo_comprobante, clave_hacienda, xml_content, estado_hacienda, fecha_emision, ruta_archivo)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
       [venta.ventaId, "04", claveHacienda, xmlFirmado, "pendiente", rutaXML]
     );
 
@@ -736,6 +797,16 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
         ruta: rutaXML
       }
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Ventas de un día (por defecto hoy): /api/sales?fecha=YYYY-MM-DD
+app.get("/api/sales", authMiddleware, async (req, res) => {
+  try {
+    const ventas = await salesService.getDailySales(req.query.fecha);
+    res.json(ventas);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -768,7 +839,7 @@ app.get("/api/reports/cash-closing", authMiddleware, async (req, res) => {
     });
 
     const cierre = {
-      fecha: fecha || new Date().toISOString().split("T")[0],
+      fecha: fecha || fechaLocalHoy(),
       totalVentas: ventas.length,
       detallePagos: { efectivo, sinpe, tarjeta },
       total: efectivo + sinpe + tarjeta,

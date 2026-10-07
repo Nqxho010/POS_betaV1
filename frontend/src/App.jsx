@@ -3,7 +3,7 @@
 // ==========================================
 // Archivo: frontend/src/App.jsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import "./App.css";
 
 // ==========================================
@@ -20,41 +20,46 @@ const apiService = {
 
   getToken: () => localStorage.getItem("token"),
 
-  searchProducts: async (query) => {
-    const response = await fetch(
-      `${API_BASE}/products/search?q=${query}`,
-      {
-        headers: { Authorization: `Bearer ${apiService.getToken()}` }
-      }
-    );
-    return response.json();
-  },
+  // Se llama cuando el backend responde 401 (token vencido o inválido)
+  onUnauthorized: null,
 
-  getAllProducts: async () => {
-    const response = await fetch(`${API_BASE}/products`, {
-      headers: { Authorization: `Bearer ${apiService.getToken()}` }
-    });
-    return response.json();
-  },
-
-  createSale: async (saleData) => {
-    const response = await fetch(`${API_BASE}/sales`, {
-      method: "POST",
+  // Petición autenticada: lanza un Error si el backend responde con error
+  request: async (path, options = {}) => {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
       headers: {
-        "Content-Type": "application/json",
+        ...options.headers,
         Authorization: `Bearer ${apiService.getToken()}`
-      },
-      body: JSON.stringify(saleData)
+      }
     });
-    return response.json();
+    const data = await response.json().catch(() => null);
+
+    if (response.status === 401 && apiService.onUnauthorized) {
+      apiService.onUnauthorized();
+    }
+    if (!response.ok) {
+      throw new Error(data?.error || `Error ${response.status}`);
+    }
+    return data;
   },
 
-  getCashClosing: async () => {
-    const response = await fetch(`${API_BASE}/reports/cash-closing`, {
-      headers: { Authorization: `Bearer ${apiService.getToken()}` }
-    });
-    return response.json();
-  },
+  searchProducts: (query) =>
+    apiService.request(`/products/search?q=${encodeURIComponent(query)}`),
+
+  getAllProducts: () => apiService.request("/products"),
+
+  createSale: (saleData) =>
+    apiService.request("/sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(saleData)
+    }),
+
+  getSales: (fecha) =>
+    apiService.request(`/sales?fecha=${encodeURIComponent(fecha)}`),
+
+  getCashClosing: (fecha) =>
+    apiService.request(`/reports/cash-closing?fecha=${encodeURIComponent(fecha)}`),
 
   login: async (username, password) => {
     const response = await fetch(`${API_BASE}/auth/login`, {
@@ -151,7 +156,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
                     type="number"
                     value={item.cantidad}
                     onChange={(e) =>
-                      onQuantityChange(item.id, parseInt(e.target.value))
+                      onQuantityChange(item.id, parseInt(e.target.value, 10) || 1)
                     }
                     min="1"
                   />
@@ -198,18 +203,27 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
 // COMPONENTE: Búsqueda de Productos
 // ==========================================
 
-function ProductSearch({ onAddToCart, allProducts }) {
+function ProductSearch({ onAddToCart }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
+  const [searchError, setSearchError] = useState("");
+  const latestQuery = useRef("");
 
   const handleSearch = async (query) => {
     setSearch(query);
+    latestQuery.current = query;
+    setSearchError("");
     if (query.length > 0) {
       try {
         const productos = await apiService.searchProducts(query);
-        setResults(productos);
+        // Ignorar respuestas de búsquedas anteriores que llegan tarde
+        if (latestQuery.current !== query) return;
+        setResults(Array.isArray(productos) ? productos : []);
       } catch (error) {
+        if (latestQuery.current !== query) return;
         console.error("Error buscando:", error);
+        setResults([]);
+        setSearchError("No se pudo buscar productos: " + error.message);
       }
     } else {
       setResults([]);
@@ -256,7 +270,9 @@ function ProductSearch({ onAddToCart, allProducts }) {
         </div>
       )}
 
-      {search && results.length === 0 && (
+      {searchError && <p className="no-results">{searchError}</p>}
+
+      {search && !searchError && results.length === 0 && (
         <p className="no-results">No se encontraron productos</p>
       )}
     </div>
@@ -275,22 +291,24 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
 
   const change = paymentMethod === "cash" ? (amountReceived || 0) - cartTotal : 0;
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (paymentMethod === "cash" && (!amountReceived || amountReceived < cartTotal)) {
       alert("Monto recibido insuficiente");
       return;
     }
 
-    onPaymentComplete({
+    const ok = await onPaymentComplete({
       method: paymentMethod,
       amountReceived: paymentMethod === "cash" ? amountReceived : cartTotal,
-      reference: sinpeRef || cardLast4
+      reference: paymentMethod === "sinpe" ? sinpeRef : paymentMethod === "tarjeta" ? cardLast4 : ""
     });
 
-    // Limpiar
-    setAmountReceived("");
-    setSinpeRef("");
-    setCardLast4("");
+    // Limpiar solo si la venta se registró (si falló, el cajero puede reintentar)
+    if (ok) {
+      setAmountReceived("");
+      setSinpeRef("");
+      setCardLast4("");
+    }
   };
 
   return (
@@ -379,10 +397,365 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
 }
 
 // ==========================================
+// UTILIDADES: Reportes
+// ==========================================
+
+const METODOS_PAGO = { cash: "Efectivo", sinpe: "SINPE Móvil", tarjeta: "Tarjeta" };
+
+const formatoColones = (monto) =>
+  "₡" + (Number(monto) || 0).toLocaleString("es-CR", { maximumFractionDigits: 2 });
+
+// Fecha de hoy (YYYY-MM-DD) en hora local
+const fechaHoy = () => {
+  const d = new Date();
+  return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
+    .map((n) => String(n).padStart(2, "0"))
+    .join("-");
+};
+
+// Carga datos que dependen de una fecha; recargar() vuelve a pedirlos
+function useDatosPorFecha(cargar, fecha) {
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let vigente = true;
+    setCargando(true);
+    setError("");
+    cargar(fecha)
+      .then((resultado) => vigente && setDatos(resultado))
+      .catch((err) => {
+        if (!vigente) return;
+        setDatos(null);
+        setError(err.message);
+      })
+      .finally(() => vigente && setCargando(false));
+    return () => {
+      vigente = false;
+    };
+  }, [cargar, fecha, version]);
+
+  return { datos, error, cargando, recargar: () => setVersion((v) => v + 1) };
+}
+
+function FiltroFecha({ fecha, onChange, onRecargar, cargando }) {
+  return (
+    <div className="report-toolbar">
+      <label>
+        Fecha
+        <input
+          type="date"
+          value={fecha}
+          max={fechaHoy()}
+          onChange={(e) => onChange(e.target.value || fechaHoy())}
+        />
+      </label>
+      <button className="btn-refresh" onClick={onRecargar} disabled={cargando}>
+        {cargando ? "Cargando..." : "Actualizar"}
+      </button>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE: Reportes (ventas del día)
+// ==========================================
+
+function ReportsScreen() {
+  const [fecha, setFecha] = useState(fechaHoy);
+  const { datos, error, cargando, recargar } = useDatosPorFecha(apiService.getSales, fecha);
+  const ventas = Array.isArray(datos) ? datos : [];
+
+  const totales = ventas.reduce(
+    (acc, venta) => ({
+      subtotal: acc.subtotal + venta.total_subtotal,
+      iva: acc.iva + venta.total_iva,
+      total: acc.total + venta.total_venta
+    }),
+    { subtotal: 0, iva: 0, total: 0 }
+  );
+
+  return (
+    <div className="report-page">
+      <div className="report-card">
+        <div className="report-header">
+          <h2>📊 Reporte de ventas</h2>
+          <FiltroFecha fecha={fecha} onChange={setFecha} onRecargar={recargar} cargando={cargando} />
+        </div>
+
+        {error && <p className="report-error">No se pudo cargar el reporte: {error}</p>}
+
+        {!error && (
+          <div className="stat-grid">
+            <div className="stat">
+              <span>Ventas</span>
+              <strong>{ventas.length}</strong>
+            </div>
+            <div className="stat">
+              <span>Subtotal</span>
+              <strong>{formatoColones(totales.subtotal)}</strong>
+            </div>
+            <div className="stat">
+              <span>IVA</span>
+              <strong>{formatoColones(totales.iva)}</strong>
+            </div>
+            <div className="stat highlight">
+              <span>Total vendido</span>
+              <strong>{formatoColones(totales.total)}</strong>
+            </div>
+          </div>
+        )}
+
+        {!error && !cargando && ventas.length === 0 && (
+          <p className="report-empty">No hay ventas registradas en esta fecha</p>
+        )}
+
+        {ventas.length > 0 && (
+          <div className="report-table-wrapper">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th>Venta #</th>
+                  <th>Cajero</th>
+                  <th>Método</th>
+                  <th className="num">Artículos</th>
+                  <th className="num">Subtotal</th>
+                  <th className="num">IVA</th>
+                  <th className="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ventas.map((venta) => (
+                  <tr key={venta.id}>
+                    <td>{(venta.fecha_local || "").slice(11, 16)}</td>
+                    <td>{venta.numero_venta}</td>
+                    <td>{venta.username || "—"}</td>
+                    <td>{METODOS_PAGO[venta.metodo_pago] || venta.metodo_pago}</td>
+                    <td className="num">{venta.total_articulos}</td>
+                    <td className="num">{formatoColones(venta.total_subtotal)}</td>
+                    <td className="num">{formatoColones(venta.total_iva)}</td>
+                    <td className="num">{formatoColones(venta.total_venta)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE: Cierre de caja
+// ==========================================
+
+function CashClosingScreen() {
+  const [fecha, setFecha] = useState(fechaHoy);
+  const { datos: cierre, error, cargando, recargar } = useDatosPorFecha(apiService.getCashClosing, fecha);
+
+  return (
+    <div className="report-page">
+      <div className="report-card narrow">
+        <div className="report-header">
+          <h2>🧾 Cierre de caja</h2>
+          <FiltroFecha fecha={fecha} onChange={setFecha} onRecargar={recargar} cargando={cargando} />
+        </div>
+
+        {error && <p className="report-error">No se pudo cargar el cierre: {error}</p>}
+
+        {cierre && !error && (
+          <>
+            <div className="summary-row">
+              <span>Fecha:</span>
+              <span>{cierre.fecha}</span>
+            </div>
+            <div className="summary-row">
+              <span>Cantidad de ventas:</span>
+              <span>{cierre.totalVentas}</span>
+            </div>
+
+            <h3 className="closing-section">Por método de pago</h3>
+            <div className="summary-row">
+              <span>Efectivo:</span>
+              <span>{formatoColones(cierre.detallePagos.efectivo)}</span>
+            </div>
+            <div className="summary-row">
+              <span>SINPE Móvil:</span>
+              <span>{formatoColones(cierre.detallePagos.sinpe)}</span>
+            </div>
+            <div className="summary-row">
+              <span>Tarjeta:</span>
+              <span>{formatoColones(cierre.detallePagos.tarjeta)}</span>
+            </div>
+
+            <h3 className="closing-section">Totales</h3>
+            <div className="summary-row">
+              <span>Monto neto (sin IVA):</span>
+              <span>{formatoColones(cierre.montoNeto)}</span>
+            </div>
+            <div className="summary-row">
+              <span>IVA:</span>
+              <span>{formatoColones(cierre.totalIVA)}</span>
+            </div>
+            <div className="summary-row total closing-total">
+              <span>TOTAL DEL DÍA:</span>
+              <span>{formatoColones(cierre.total)}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE: Productos e inventario
+// ==========================================
+
+function ProductsScreen() {
+  const [filtro, setFiltro] = useState("");
+  const { datos, error, cargando, recargar } = useDatosPorFecha(apiService.getAllProducts, null);
+
+  // precio_venta se guarda sin IVA; el IVA se suma al vender
+  const productos = (Array.isArray(datos) ? datos : []).map((producto) => {
+    const precioConIva = producto.precio_venta * (1 + producto.impuesto_venta / 100);
+    return {
+      ...producto,
+      precioConIva,
+      valorSinIva: producto.precio_venta * producto.stock_actual,
+      valorConIva: precioConIva * producto.stock_actual
+    };
+  });
+
+  const texto = filtro.trim().toLowerCase();
+  const visibles = productos.filter(
+    (producto) =>
+      !texto ||
+      producto.nombre.toLowerCase().includes(texto) ||
+      (producto.codigo_barras || "").toLowerCase().includes(texto)
+  );
+
+  const totales = visibles.reduce(
+    (acc, producto) => ({
+      unidades: acc.unidades + producto.stock_actual,
+      sinIva: acc.sinIva + producto.valorSinIva,
+      conIva: acc.conIva + producto.valorConIva
+    }),
+    { unidades: 0, sinIva: 0, conIva: 0 }
+  );
+
+  return (
+    <div className="report-page">
+      <div className="report-card">
+        <div className="report-header">
+          <h2>📦 Productos e inventario</h2>
+          <div className="report-toolbar">
+            <input
+              type="text"
+              placeholder="Filtrar por nombre o código..."
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+            />
+            <button className="btn-refresh" onClick={recargar} disabled={cargando}>
+              {cargando ? "Cargando..." : "Actualizar"}
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="report-error">No se pudieron cargar los productos: {error}</p>}
+
+        {!error && (
+          <div className="stat-grid">
+            <div className="stat">
+              <span>Productos</span>
+              <strong>{visibles.length}</strong>
+            </div>
+            <div className="stat">
+              <span>Unidades en inventario</span>
+              <strong>{totales.unidades.toLocaleString("es-CR")}</strong>
+            </div>
+            <div className="stat">
+              <span>Valor total sin IVA</span>
+              <strong>{formatoColones(totales.sinIva)}</strong>
+            </div>
+            <div className="stat highlight">
+              <span>Valor total con IVA</span>
+              <strong>{formatoColones(totales.conIva)}</strong>
+            </div>
+          </div>
+        )}
+
+        {!error && !cargando && visibles.length === 0 && (
+          <p className="report-empty">
+            {productos.length === 0 ? "No hay productos registrados" : "Ningún producto coincide con el filtro"}
+          </p>
+        )}
+
+        {visibles.length > 0 && (
+          <div className="report-table-wrapper">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Producto</th>
+                  <th className="num">Stock</th>
+                  <th className="num">Precio sin IVA</th>
+                  <th className="num">IVA</th>
+                  <th className="num">Precio con IVA</th>
+                  <th className="num">Total sin IVA</th>
+                  <th className="num">Total con IVA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibles.map((producto) => (
+                  <tr key={producto.id}>
+                    <td>{producto.codigo_barras || "—"}</td>
+                    <td>{producto.nombre}</td>
+                    <td className={producto.stock_actual <= producto.stock_minimo ? "num stock-low" : "num"}>
+                      {producto.stock_actual}
+                    </td>
+                    <td className="num">{formatoColones(producto.precio_venta)}</td>
+                    <td className="num">{producto.impuesto_venta}%</td>
+                    <td className="num">{formatoColones(producto.precioConIva)}</td>
+                    <td className="num">{formatoColones(producto.valorSinIva)}</td>
+                    <td className="num">{formatoColones(producto.valorConIva)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan="2">TOTAL</td>
+                  <td className="num">{totales.unidades.toLocaleString("es-CR")}</td>
+                  <td colSpan="3"></td>
+                  <td className="num">{formatoColones(totales.sinIva)}</td>
+                  <td className="num">{formatoColones(totales.conIva)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
 // COMPONENTE: Principal (POS)
 // ==========================================
 
+const VISTAS = [
+  { id: "inicio", label: "Inicio" },
+  { id: "productos", label: "Productos" },
+  { id: "reportes", label: "Reportes" },
+  { id: "cierre", label: "Cierre de caja" }
+];
+
 function POSScreen({ onLogout }) {
+  const [view, setView] = useState("inicio");
   const [cartItems, setCartItems] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -454,8 +827,10 @@ function POSScreen({ onLogout }) {
           `✓ Venta completada\nVenta #: ${response.numeroVenta}\nTotal: ₡${response.total.toLocaleString()}\nEstado: ${response.estado}`
         );
       }, 500);
+      return true;
     } catch (error) {
       alert("Error procesando venta: " + error.message);
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -465,12 +840,28 @@ function POSScreen({ onLogout }) {
     <div className="pos-container">
       <header className="pos-header">
         <h1>🛍️ POS - Punto de Venta</h1>
+        <nav className="pos-nav">
+          {VISTAS.map((vista) => (
+            <button
+              key={vista.id}
+              className={view === vista.id ? "nav-link active" : "nav-link"}
+              onClick={() => setView(vista.id)}
+            >
+              {vista.label}
+            </button>
+          ))}
+        </nav>
         <button className="btn-logout" onClick={onLogout}>
           Cerrar Sesión
         </button>
       </header>
 
-      <div className="pos-content">
+      {view === "productos" && <ProductsScreen />}
+      {view === "reportes" && <ReportsScreen />}
+      {view === "cierre" && <CashClosingScreen />}
+
+      {/* Inicio queda montado (oculto) para no perder el carrito al cambiar de vista */}
+      <div className="pos-content" style={view === "inicio" ? undefined : { display: "none" }}>
         <div className="pos-left">
           <ProductSearch onAddToCart={handleAddToCart} />
         </div>
@@ -495,7 +886,7 @@ function POSScreen({ onLogout }) {
               <h3>✓ Última venta</h3>
               <p>Venta #{lastSale.numeroVenta}</p>
               <p>Total: ₡{lastSale.total.toLocaleString()}</p>
-              <p>Comprobante: {lastSale.comprobante.estado}</p>
+              <p>Comprobante: {lastSale.comprobante?.estado}</p>
             </div>
           )}
         </div>
@@ -511,13 +902,18 @@ function POSScreen({ onLogout }) {
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem("token"));
 
+  const logout = () => {
+    localStorage.removeItem("token");
+    setIsLoggedIn(false);
+  };
+
+  // Token vencido o inválido: volver al login en vez de quedarse sin productos
+  apiService.onUnauthorized = logout;
+
   return (
     <div className="app">
       {isLoggedIn ? (
-        <POSScreen onLogout={() => {
-          localStorage.removeItem("token");
-          setIsLoggedIn(false);
-        }} />
+        <POSScreen onLogout={logout} />
       ) : (
         <LoginScreen onLogin={() => setIsLoggedIn(true)} />
       )}

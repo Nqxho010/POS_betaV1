@@ -1,6 +1,6 @@
 // config/hacienda.js - Configuración de Hacienda
 
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 const haciendaConfig = {
   // Información del emisor (tu negocio)

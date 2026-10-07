@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FacturaElectronicaV4_4>
+  <Encabezado>
+    <NumeroCedulaEmisor>3101234567</NumeroCedulaEmisor>
+    <NumeroCedulaReceptor>N/A</NumeroCedulaReceptor>
+    <ProveedorSistema>3101234567</ProveedorSistema>
+    <NombreComercial>Mi Negocio S.A.</NombreComercial>
+    <TipoComprobante>04</TipoComprobante>
+    <FechaEmision>2026-10-07T01:50:08.062Z</FechaEmision>
+    <Moneda>CRC</Moneda>
+    <NumeroConsecutivo>001-001-710919</NumeroConsecutivo>
+    <CodigoActividad>6201</CodigoActividad>
+    <Provincia>1</Provincia>
+    <Canton>1</Canton>
+    <Distrito>1</Distrito>
+    <Barrio>1</Barrio>
+    <DireccionExacta>San José, Costa Rica</DireccionExacta>
+  </Encabezado>
+  <DetalleServicio>
+    <LineaDetalle>
+      <NumeroLineaDetalle>1</NumeroLineaDetalle>
+      <CodigoActividad>6201</CodigoActividad>
+      <CodigoProducto>1</CodigoProducto>
+      <DescripcionProducto>Arroz</DescripcionProducto>
+      <Cantidad>1</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <PrecioUnitario>5000.00</PrecioUnitario>
+      <Descuento>
+        <MontoDescuento>0.00</MontoDescuento>
+      </Descuento>
+      <SubTotal>5000.00</SubTotal>
+      <ImpuestoVentas>
+        <Tarifa>13</Tarifa>
+        <Monto>650.00</Monto>
+      </ImpuestoVentas>
+      <MontoNeto>5000.00</MontoNeto>
+    </LineaDetalle>
+  </DetalleServicio>
+  <ResumenFactura>
+    <CodigoMoneda>CRC</CodigoMoneda>
+    <TotalServGravados>5000.00</TotalServGravados>
+    <TotalServExentos>0.00</TotalServExentos>
+    <TotalImpuestoVentas>650.00</TotalImpuestoVentas>
+    <TotalImpuestoSelectivo>0.00</TotalImpuestoSelectivo>
+    <TotalComprobante>5650.00</TotalComprobante>
+  </ResumenFactura>
+  <CodigoSeguridad></CodigoSeguridad>
+</FacturaElectronicaV4_4>
