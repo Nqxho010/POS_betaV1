@@ -43,6 +43,22 @@ const apiService = {
     return data;
   },
 
+  post: (path, body) =>
+    apiService.request(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }),
+
+  getMe: () => apiService.request("/auth/me"),
+
+  createUser: (data) => apiService.post("/auth/register", data),
+
+  createProduct: (data) => apiService.post("/products", data),
+
+  addStock: (productId, cantidad) =>
+    apiService.post(`/products/${productId}/stock`, { cantidad }),
+
   searchProducts: (query) =>
     apiService.request(`/products/search?q=${encodeURIComponent(query)}`),
 
@@ -129,7 +145,10 @@ function LoginScreen({ onLogin }) {
 function Cart({ items, onRemoveItem, onQuantityChange }) {
   // Calcular totales
   const subtotal = items.reduce((sum, item) => sum + (item.precio_venta * item.cantidad), 0);
-  const iva = subtotal * 0.13;
+  const iva = items.reduce(
+    (sum, item) => sum + item.precio_venta * item.cantidad * (item.impuesto_venta / 100),
+    0
+  );
   const total = subtotal + iva;
 
   return (
@@ -185,7 +204,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
               <span>₡{subtotal.toLocaleString()}</span>
             </div>
             <div className="summary-row">
-              <span>IVA (13%):</span>
+              <span>IVA:</span>
               <span>₡{iva.toLocaleString()}</span>
             </div>
             <div className="summary-row total">
@@ -616,6 +635,9 @@ function CashClosingScreen() {
 // COMPONENTE: Productos e inventario
 // ==========================================
 
+// El inventario tiene miles de productos: la tabla muestra solo los primeros
+const MAX_FILAS_PRODUCTOS = 200;
+
 function ProductsScreen() {
   const [filtro, setFiltro] = useState("");
   const { datos, error, cargando, recargar } = useDatosPorFecha(apiService.getAllProducts, null);
@@ -711,7 +733,7 @@ function ProductsScreen() {
                 </tr>
               </thead>
               <tbody>
-                {visibles.map((producto) => (
+                {visibles.slice(0, MAX_FILAS_PRODUCTOS).map((producto) => (
                   <tr key={producto.id}>
                     <td>{producto.codigo_barras || "—"}</td>
                     <td>{producto.nombre}</td>
@@ -738,7 +760,351 @@ function ProductsScreen() {
             </table>
           </div>
         )}
+
+        {visibles.length > MAX_FILAS_PRODUCTOS && (
+          <p className="report-empty">
+            Mostrando {MAX_FILAS_PRODUCTOS} de {visibles.length.toLocaleString("es-CR")} productos; usa el filtro para ver otros.
+            Los totales incluyen todos.
+          </p>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTES: Administración (solo rol admin)
+// ==========================================
+
+const VISTAS_ADMIN = [
+  { id: "admin-usuarios", label: "Crear usuarios" },
+  { id: "admin-inventario", label: "Agregar producto o cantidad" }
+];
+
+function AdminMenu({ view, onSelect }) {
+  const [abierto, setAbierto] = useState(false);
+  const ref = useRef(null);
+
+  // Cerrar al hacer clic fuera del menú
+  useEffect(() => {
+    if (!abierto) return;
+    const cerrar = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setAbierto(false);
+    };
+    document.addEventListener("mousedown", cerrar);
+    return () => document.removeEventListener("mousedown", cerrar);
+  }, [abierto]);
+
+  const activo = VISTAS_ADMIN.some((vista) => vista.id === view);
+
+  return (
+    <div className="nav-dropdown" ref={ref}>
+      <button
+        className={activo ? "nav-link active" : "nav-link"}
+        onClick={() => setAbierto(!abierto)}
+      >
+        Administración ▾
+      </button>
+      {abierto && (
+        <div className="nav-dropdown-menu">
+          {VISTAS_ADMIN.map((vista) => (
+            <button
+              key={vista.id}
+              className={view === vista.id ? "active" : ""}
+              onClick={() => {
+                onSelect(vista.id);
+                setAbierto(false);
+              }}
+            >
+              {vista.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FormMessage({ mensaje }) {
+  if (!mensaje) return null;
+  return <p className={mensaje.ok ? "form-msg ok" : "form-msg error"}>{mensaje.texto}</p>;
+}
+
+// Los usuarios se guardan en la BD principal (pos.db)
+function AdminUsersScreen() {
+  const vacio = { username: "", password: "", email: "", rol: "cajero" };
+  const [form, setForm] = useState(vacio);
+  const [mensaje, setMensaje] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cambiar = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      const usuario = await apiService.createUser(form);
+      setMensaje({ ok: true, texto: `✓ Usuario "${usuario.username}" creado con rol ${usuario.rol}` });
+      setForm(vacio);
+    } catch (error) {
+      setMensaje({ ok: false, texto: "No se pudo crear el usuario: " + error.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-page">
+      <div className="report-card narrow">
+        <div className="report-header">
+          <h2>👤 Crear usuario</h2>
+        </div>
+        <form className="admin-form" onSubmit={guardar}>
+          <label>
+            Usuario
+            <input type="text" value={form.username} onChange={cambiar("username")} required />
+          </label>
+          <label>
+            Contraseña
+            <input
+              type="password"
+              value={form.password}
+              onChange={cambiar("password")}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          <label>
+            Correo (opcional)
+            <input type="email" value={form.email} onChange={cambiar("email")} />
+          </label>
+          <label>
+            Rol
+            <select value={form.rol} onChange={cambiar("rol")}>
+              <option value="cajero">Cajero</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </label>
+          <button className="btn-refresh" type="submit" disabled={guardando}>
+            {guardando ? "Guardando..." : "Crear usuario"}
+          </button>
+          <FormMessage mensaje={mensaje} />
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Los productos y sus existencias se guardan en FacInve.DBF
+function AdminInventoryScreen() {
+  return (
+    <div className="report-page">
+      <div className="admin-grid">
+        <AddStockForm />
+        <NewProductForm />
+      </div>
+    </div>
+  );
+}
+
+function AddStockForm() {
+  const [busqueda, setBusqueda] = useState("");
+  const [resultados, setResultados] = useState([]);
+  const [producto, setProducto] = useState(null);
+  const [cantidad, setCantidad] = useState("");
+  const [mensaje, setMensaje] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const ultimaBusqueda = useRef("");
+
+  const buscar = async (texto) => {
+    setBusqueda(texto);
+    ultimaBusqueda.current = texto;
+    if (!texto) return setResultados([]);
+    try {
+      const productos = await apiService.searchProducts(texto);
+      // Ignorar respuestas de búsquedas anteriores que llegan tarde
+      if (ultimaBusqueda.current !== texto) return;
+      setResultados(Array.isArray(productos) ? productos.slice(0, 8) : []);
+    } catch (error) {
+      if (ultimaBusqueda.current !== texto) return;
+      setResultados([]);
+      setMensaje({ ok: false, texto: "No se pudo buscar: " + error.message });
+    }
+  };
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      const actualizado = await apiService.addStock(producto.id, Number(cantidad));
+      setMensaje({
+        ok: true,
+        texto: `✓ ${actualizado.nombre}: se agregaron ${cantidad}, existencia actual ${actualizado.stock_actual}`
+      });
+      setProducto(null);
+      setCantidad("");
+    } catch (error) {
+      setMensaje({ ok: false, texto: "No se pudo agregar la cantidad: " + error.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-card">
+      <div className="report-header">
+        <h2>➕ Agregar cantidad a un producto</h2>
+      </div>
+
+      {!producto && (
+        <div className="admin-form">
+          <label>
+            Buscar producto
+            <input
+              type="text"
+              placeholder="Código de barras o nombre..."
+              value={busqueda}
+              onChange={(e) => buscar(e.target.value)}
+            />
+          </label>
+          {resultados.map((resultado) => (
+            <button
+              key={resultado.id}
+              type="button"
+              className="admin-result"
+              onClick={() => {
+                setProducto(resultado);
+                setBusqueda("");
+                setResultados([]);
+                setMensaje(null);
+              }}
+            >
+              <span>{resultado.nombre}</span>
+              <small>
+                {resultado.codigo_barras} · Existencia: {resultado.stock_actual}
+              </small>
+            </button>
+          ))}
+          {busqueda && resultados.length === 0 && (
+            <p className="report-empty">No se encontraron productos</p>
+          )}
+        </div>
+      )}
+
+      {producto && (
+        <form className="admin-form" onSubmit={guardar}>
+          <div className="admin-selected">
+            <strong>{producto.nombre}</strong>
+            <small>
+              {producto.codigo_barras} · Existencia actual: {producto.stock_actual}
+            </small>
+          </div>
+          <label>
+            Cantidad a agregar
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={cantidad}
+              onChange={(e) => setCantidad(e.target.value)}
+              autoFocus
+              required
+            />
+          </label>
+          <div className="admin-actions">
+            <button className="btn-refresh" type="submit" disabled={guardando}>
+              {guardando ? "Guardando..." : "Agregar cantidad"}
+            </button>
+            <button className="btn-secondary" type="button" onClick={() => setProducto(null)}>
+              Cambiar producto
+            </button>
+          </div>
+        </form>
+      )}
+
+      <FormMessage mensaje={mensaje} />
+    </div>
+  );
+}
+
+function NewProductForm() {
+  const vacio = {
+    codigo_barras: "",
+    nombre: "",
+    precio_venta: "",
+    impuesto_venta: "13",
+    stock_actual: "",
+    codigo_cabys: ""
+  };
+  const [form, setForm] = useState(vacio);
+  const [mensaje, setMensaje] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cambiar = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      const producto = await apiService.createProduct({
+        ...form,
+        precio_venta: Number(form.precio_venta),
+        impuesto_venta: Number(form.impuesto_venta),
+        stock_actual: Number(form.stock_actual) || 0
+      });
+      setMensaje({ ok: true, texto: `✓ Producto "${producto.nombre}" creado` });
+      setForm(vacio);
+    } catch (error) {
+      setMensaje({ ok: false, texto: "No se pudo crear el producto: " + error.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-card">
+      <div className="report-header">
+        <h2>📦 Nuevo producto</h2>
+      </div>
+      <form className="admin-form" onSubmit={guardar}>
+        <label>
+          Código de barras
+          <input type="text" maxLength="20" value={form.codigo_barras} onChange={cambiar("codigo_barras")} required />
+        </label>
+        <label>
+          Nombre
+          <input type="text" maxLength="80" value={form.nombre} onChange={cambiar("nombre")} required />
+        </label>
+        <label>
+          Precio sin IVA
+          <input type="number" min="0" step="0.01" value={form.precio_venta} onChange={cambiar("precio_venta")} required />
+        </label>
+        <label>
+          IVA
+          <select value={form.impuesto_venta} onChange={cambiar("impuesto_venta")}>
+            <option value="13">13%</option>
+            <option value="4">4%</option>
+            <option value="2">2%</option>
+            <option value="1">1%</option>
+            <option value="0">Exento (0%)</option>
+          </select>
+        </label>
+        <label>
+          Cantidad inicial
+          <input type="number" min="0" step="0.01" value={form.stock_actual} onChange={cambiar("stock_actual")} />
+        </label>
+        <label>
+          Código CABYS (opcional)
+          <input type="text" maxLength="13" value={form.codigo_cabys} onChange={cambiar("codigo_cabys")} />
+        </label>
+        <button className="btn-refresh" type="submit" disabled={guardando}>
+          {guardando ? "Guardando..." : "Crear producto"}
+        </button>
+        <FormMessage mensaje={mensaje} />
+      </form>
     </div>
   );
 }
@@ -759,11 +1125,20 @@ function POSScreen({ onLogout }) {
   const [cartItems, setCartItems] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSale, setLastSale] = useState(null);
+  const [usuario, setUsuario] = useState(null);
 
+  // El rol decide si se muestra el menú de administración
+  useEffect(() => {
+    apiService.getMe().then(setUsuario).catch(() => setUsuario(null));
+  }, []);
+
+  const esAdmin = usuario?.rol === "admin";
+
+  // Con IVA, según la tarifa de cada producto
   const cartTotal = cartItems.reduce(
-    (sum, item) => sum + item.precio_venta * item.cantidad,
+    (sum, item) => sum + item.precio_venta * item.cantidad * (1 + item.impuesto_venta / 100),
     0
-  ) * 1.13; // Con IVA
+  );
 
   const handleAddToCart = (product) => {
     const existing = cartItems.find((item) => item.id === product.id);
@@ -850,6 +1225,7 @@ function POSScreen({ onLogout }) {
               {vista.label}
             </button>
           ))}
+          {esAdmin && <AdminMenu view={view} onSelect={setView} />}
         </nav>
         <button className="btn-logout" onClick={onLogout}>
           Cerrar Sesión
@@ -859,6 +1235,8 @@ function POSScreen({ onLogout }) {
       {view === "productos" && <ProductsScreen />}
       {view === "reportes" && <ReportsScreen />}
       {view === "cierre" && <CashClosingScreen />}
+      {esAdmin && view === "admin-usuarios" && <AdminUsersScreen />}
+      {esAdmin && view === "admin-inventario" && <AdminInventoryScreen />}
 
       {/* Inicio queda montado (oculto) para no perder el carrito al cambiar de vista */}
       <div className="pos-content" style={view === "inicio" ? undefined : { display: "none" }}>

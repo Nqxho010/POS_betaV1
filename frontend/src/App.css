@@ -804,3 +804,150 @@ body {
     margin: 0;
   }
 }
+
+/* ==========================================
+   ADMINISTRACIÓN
+   ========================================== */
+
+.nav-dropdown {
+  position: relative;
+}
+
+.nav-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 250px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  padding: 6px;
+  z-index: 20;
+}
+
+.nav-dropdown-menu button {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+}
+
+.nav-dropdown-menu button:hover,
+.nav-dropdown-menu button.active {
+  background: #eef0fd;
+  color: #5568d3;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  max-width: 1100px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.admin-grid .report-card {
+  margin: 0;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #666;
+}
+
+.admin-form input,
+.admin-form select {
+  padding: 9px 10px;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+  background: white;
+}
+
+.admin-form input:focus,
+.admin-form select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.admin-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 5px;
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+}
+
+.admin-result:hover {
+  background: #eef0fd;
+  border-color: #667eea;
+}
+
+.admin-result small,
+.admin-selected small {
+  color: #999;
+  font-size: 12px;
+}
+
+.admin-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #eef0fd;
+  border-radius: 5px;
+  padding: 12px;
+  color: #333;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-secondary {
+  background: white;
+  color: #667eea;
+  border: 1px solid #667eea;
+  padding: 8px 16px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.form-msg {
+  font-size: 14px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  margin-top: 4px;
+}
+
+.form-msg.ok {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.form-msg.error {
+  background: #fdecea;
+  color: #d32f2f;
+}

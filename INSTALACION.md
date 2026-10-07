@@ -73,7 +73,7 @@ mkdir src/middleware
 PORT=5000
 JWT_SECRET=tu-clave-muy-segura-cambiar-en-produccion
 NODE_ENV=development
-DB_PATH=./database/pos.db
+DATA_DIR=
 ```
 
 #### PASO 4: Iniciar el backend
@@ -159,9 +159,12 @@ Usuario: cajero
 Contraseña: 1234
 ```
 
-### 2. Cargar algunos productos de prueba
+### 2. Productos
 
-Una vez en el POS, abre otra terminal y ejecuta:
+Los productos se leen de `backend/database/FacInve.DBF`. Para actualizar el
+catálogo basta con reemplazar ese archivo (no hace falta reiniciar).
+
+Para agregar un producto suelto al DBF, abre otra terminal y ejecuta:
 
 ```bash
 curl -X POST http://localhost:5000/api/products \
@@ -200,7 +203,9 @@ pos-costarica/
 │   ├── package.json
 │   ├── .env
 │   └── database/
-│       └── pos.db          (se crea automáticamente)
+│       ├── pos.db          (usuarios y auditoría; se crea automáticamente)
+│       ├── hacienda.db     (ventas, tiquetes y comprobantes; se crea automáticamente)
+│       └── FacInve.DBF     (productos e inventario; lo debes copiar aquí)
 │
 ├── frontend/
 │   ├── public/

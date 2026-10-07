@@ -12,6 +12,7 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
 const mkdirp = require("mkdirp");
+const InventarioDBF = require("./utils/dbfInventario");
 // El .env vive junto a este archivo, no en el directorio desde donde se ejecuta
 require('dotenv').config({ path: path.join(__dirname, ".env") });
 
@@ -22,159 +23,230 @@ require('dotenv').config({ path: path.join(__dirname, ".env") });
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "tu-clave-secreta-muy-segura-cambiar-en-produccion";
-const DB_PATH = path.join(__dirname, "../database/pos.db");
-const COMPROBANTES_PATH = path.join(__dirname, "../comprobantes");
+// Carpeta de datos del cliente (bases, DBF y comprobantes). Con DATA_DIR en el
+// .env vive fuera del código; sin él se usa la carpeta backend/
+const DATA_DIR = path.resolve(__dirname, "..", process.env.DATA_DIR || "");
+const DATABASE_DIR = path.join(DATA_DIR, "database");
+// BD principal: solo usuarios (y su auditoría)
+const DB_PATH = path.join(DATABASE_DIR, "pos.db");
+// BD de Hacienda: ventas, tiquetes y comprobantes electrónicos
+const DB_HACIENDA_PATH = path.join(DATABASE_DIR, "hacienda.db");
+// Productos: archivo DBF del inventario
+const INVENTARIO_PATH = path.join(DATABASE_DIR, "FacInve.DBF");
+const COMPROBANTES_PATH = path.join(DATA_DIR, "comprobantes");
+const ROLES = ["cajero", "admin"];
 
 // Middleware
 app.use(express.json());
 app.use(cors());
 
-// Crear carpeta comprobantes si no existe
+// Crear carpetas de datos si no existen
+mkdirp.sync(DATABASE_DIR);
 mkdirp.sync(COMPROBANTES_PATH);
 
-// Base de datos SQLite PERSISTENTE
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error("❌ Error conectando a BD:", err);
-  } else {
-    console.log(`✓ BD conectada: ${DB_PATH}`);
-  }
-});
+// Bases de datos SQLite PERSISTENTES
+function abrirBD(ruta) {
+  const conexion = new sqlite3.Database(ruta, (err) => {
+    if (err) {
+      console.error("❌ Error conectando a BD:", err);
+    } else {
+      console.log(`✓ BD conectada: ${ruta}`);
+    }
+  });
 
-// Sin este listener, un error en un db.run() sin callback tumba el proceso
-db.on("error", (err) => {
-  console.error("❌ Error de BD:", err.message);
-});
+  // Sin este listener, un error en un db.run() sin callback tumba el proceso
+  conexion.on("error", (err) => {
+    console.error("❌ Error de BD:", err.message);
+  });
+
+  return conexion;
+}
+
+const db = abrirBD(DB_PATH);
+const dbHacienda = abrirBD(DB_HACIENDA_PATH);
+const inventario = new InventarioDBF(INVENTARIO_PATH);
+
+// sqlite3 como promesas; el primer parámetro es la conexión a usar
+function dbRun(conexion, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    conexion.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  });
+}
+
+function dbGet(conexion, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    conexion.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+  });
+}
+
+function dbAll(conexion, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    conexion.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+  });
+}
 
 // ==========================================
 // 2. INICIALIZAR SCHEMA DE BD
 // ==========================================
 
-function initializeDatabase() {
-  db.serialize(() => {
-    // Tabla de usuarios
-    db.run(`
-      CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        email TEXT,
-        rol TEXT DEFAULT 'cajero',
-        activo INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+async function initializeDatabase() {
+  // ---- BD principal (pos.db): usuarios ----
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id INTEGER PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      email TEXT,
+      rol TEXT DEFAULT 'cajero',
+      activo INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-    // Insertar usuario por defecto si no existe
-    db.run(`
+  // Insertar usuario por defecto si no existe
+  await dbRun(db, `
+    INSERT OR IGNORE INTO usuarios (username, password_hash, email, rol)
+    VALUES ('cajero', ?, 'cajero@pos.cr', 'cajero')
+  `, [bcrypt.hashSync('1234', 10)]);
+
+  // Administrador inicial: su contraseña sale de ADMIN_PASSWORD en el .env
+  if (process.env.ADMIN_PASSWORD) {
+    await dbRun(db, `
       INSERT OR IGNORE INTO usuarios (username, password_hash, email, rol)
-      VALUES ('cajero', ?, 'cajero@pos.cr', 'cajero')
-    `, [bcrypt.hashSync('1234', 10)]);
+      VALUES ('admin', ?, 'admin@pos.cr', 'admin')
+    `, [bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10)]);
+  } else {
+    console.warn("⚠️ ADMIN_PASSWORD no está en el .env: no se crea el usuario admin");
+  }
 
-    // Tabla de productos
-    db.run(`
-      CREATE TABLE IF NOT EXISTS productos (
-        id INTEGER PRIMARY KEY,
-        codigo_barras TEXT UNIQUE,
-        nombre TEXT NOT NULL,
-        descripcion TEXT,
-        codigo_cabys TEXT NOT NULL,
-        precio_venta REAL NOT NULL,
-        impuesto_venta REAL DEFAULT 13,
-        stock_actual INTEGER DEFAULT 0,
-        stock_minimo INTEGER DEFAULT 0,
-        activo INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  // Tabla de auditoría (acciones de los usuarios)
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS auditoria (
+      id INTEGER PRIMARY KEY,
+      usuario_id INTEGER,
+      accion TEXT NOT NULL,
+      tabla TEXT,
+      registro_id INTEGER,
+      datos_antiguos TEXT,
+      datos_nuevos TEXT,
+      ip_address TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    )
+  `);
 
-    // Tabla de ventas
-    db.run(`
-      CREATE TABLE IF NOT EXISTS ventas (
-        id INTEGER PRIMARY KEY,
-        numero_venta TEXT UNIQUE NOT NULL,
-        fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-        usuario_id INTEGER,
-        cliente_id TEXT,
-        total_subtotal REAL,
-        total_iva REAL,
-        total_venta REAL,
-        metodo_pago TEXT,
-        estado TEXT DEFAULT 'completada',
-        notas TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
-      )
-    `);
+  // ---- BD de Hacienda (hacienda.db): ventas, tiquetes y comprobantes ----
+  // usuario_id apunta a usuarios de pos.db (sin FK: es otra BD)
+  await dbRun(dbHacienda, `
+    CREATE TABLE IF NOT EXISTS ventas (
+      id INTEGER PRIMARY KEY,
+      numero_venta TEXT UNIQUE NOT NULL,
+      fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+      usuario_id INTEGER,
+      cliente_id TEXT,
+      total_subtotal REAL,
+      total_iva REAL,
+      total_venta REAL,
+      metodo_pago TEXT,
+      estado TEXT DEFAULT 'completada',
+      notas TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-    // Tabla de detalle de ventas
-    db.run(`
-      CREATE TABLE IF NOT EXISTS detalle_ventas (
-        id INTEGER PRIMARY KEY,
-        venta_id INTEGER NOT NULL,
-        producto_id INTEGER NOT NULL,
-        cantidad REAL,
-        precio_unitario REAL,
-        descuento REAL DEFAULT 0,
-        subtotal REAL,
-        iva REAL,
-        FOREIGN KEY (venta_id) REFERENCES ventas(id),
-        FOREIGN KEY (producto_id) REFERENCES productos(id)
-      )
-    `);
+  // Los productos viven en el DBF: cada línea guarda su propia copia del
+  // código, nombre y tarifa con que se vendió
+  await dbRun(dbHacienda, `
+    CREATE TABLE IF NOT EXISTS detalle_ventas (
+      id INTEGER PRIMARY KEY,
+      venta_id INTEGER NOT NULL,
+      producto_codigo TEXT,
+      nombre TEXT,
+      codigo_cabys TEXT,
+      cantidad REAL,
+      precio_unitario REAL,
+      descuento REAL DEFAULT 0,
+      subtotal REAL,
+      iva REAL,
+      tarifa_iva REAL DEFAULT 13,
+      FOREIGN KEY (venta_id) REFERENCES ventas(id)
+    )
+  `);
 
-    // Tabla de comprobantes HACIENDA (MEJORADA)
-    db.run(`
-      CREATE TABLE IF NOT EXISTS comprobantes (
-        id INTEGER PRIMARY KEY,
-        venta_id INTEGER UNIQUE,
-        tipo_comprobante TEXT,
-        clave_hacienda TEXT UNIQUE,
-        xml_content TEXT,
-        xml_respuesta TEXT,
-        estado_hacienda TEXT DEFAULT 'pendiente',
-        mensaje_hacienda TEXT,
-        fecha_emision DATETIME,
-        fecha_envio DATETIME,
-        fecha_aceptacion DATETIME,
-        intentos_envio INTEGER DEFAULT 0,
-        proximo_intento DATETIME,
-        ruta_archivo TEXT,
-        FOREIGN KEY (venta_id) REFERENCES ventas(id)
-      )
-    `);
+  // Tabla de comprobantes HACIENDA
+  await dbRun(dbHacienda, `
+    CREATE TABLE IF NOT EXISTS comprobantes (
+      id INTEGER PRIMARY KEY,
+      venta_id INTEGER UNIQUE,
+      tipo_comprobante TEXT,
+      clave_hacienda TEXT UNIQUE,
+      xml_content TEXT,
+      xml_respuesta TEXT,
+      estado_hacienda TEXT DEFAULT 'pendiente',
+      mensaje_hacienda TEXT,
+      fecha_emision DATETIME,
+      fecha_envio DATETIME,
+      fecha_aceptacion DATETIME,
+      intentos_envio INTEGER DEFAULT 0,
+      proximo_intento DATETIME,
+      ruta_archivo TEXT,
+      FOREIGN KEY (venta_id) REFERENCES ventas(id)
+    )
+  `);
 
-    // Migración: BDs creadas antes de que existiera la columna ruta_archivo
-    db.all(`PRAGMA table_info(comprobantes)`, (err, columnas) => {
-      if (err) return console.error("❌ Error revisando schema:", err.message);
-      if (!columnas.some((c) => c.name === "ruta_archivo")) {
-        db.run(`ALTER TABLE comprobantes ADD COLUMN ruta_archivo TEXT`, (err) => {
-          if (err) console.error("❌ Error migrando comprobantes:", err.message);
-          else console.log("✓ Migración: columna ruta_archivo agregada");
-        });
+  await migrarVentasDesdeBDPrincipal();
+  console.log("✓ Bases de datos inicializadas");
+
+  try {
+    console.log(`✓ Inventario cargado: ${inventario.cargar()} productos (${INVENTARIO_PATH})`);
+  } catch (error) {
+    console.error("❌ Error cargando inventario:", error.message);
+  }
+}
+
+// Migración: antes todo vivía en pos.db. Pasa ventas, detalles y comprobantes
+// a hacienda.db y deja pos.db solo con usuarios y auditoría.
+async function migrarVentasDesdeBDPrincipal() {
+  await dbRun(dbHacienda, `ATTACH DATABASE ? AS principal`, [DB_PATH]);
+  try {
+    const tablas = (await dbAll(dbHacienda, `SELECT name FROM principal.sqlite_master WHERE type = 'table'`))
+      .map((t) => t.name);
+    if (!tablas.includes("ventas")) return;
+
+    await dbRun(dbHacienda, "BEGIN");
+    try {
+      await dbRun(dbHacienda, `
+        INSERT OR IGNORE INTO ventas (id, numero_venta, fecha, usuario_id, cliente_id, total_subtotal, total_iva, total_venta, metodo_pago, estado, notas, created_at)
+        SELECT id, numero_venta, fecha, usuario_id, cliente_id, total_subtotal, total_iva, total_venta, metodo_pago, estado, notas, created_at
+        FROM principal.ventas
+      `);
+      await dbRun(dbHacienda, `
+        INSERT OR IGNORE INTO detalle_ventas (id, venta_id, producto_codigo, nombre, codigo_cabys, cantidad, precio_unitario, descuento, subtotal, iva, tarifa_iva)
+        SELECT dv.id, dv.venta_id, p.codigo_barras, p.nombre, p.codigo_cabys, dv.cantidad, dv.precio_unitario, dv.descuento, dv.subtotal, dv.iva, COALESCE(p.impuesto_venta, 13)
+        FROM principal.detalle_ventas dv
+        LEFT JOIN principal.productos p ON p.id = dv.producto_id
+      `);
+      await dbRun(dbHacienda, `
+        INSERT OR IGNORE INTO comprobantes (id, venta_id, tipo_comprobante, clave_hacienda, xml_content, xml_respuesta, estado_hacienda, mensaje_hacienda, fecha_emision, fecha_envio, fecha_aceptacion, intentos_envio, proximo_intento, ruta_archivo)
+        SELECT id, venta_id, tipo_comprobante, clave_hacienda, xml_content, xml_respuesta, estado_hacienda, mensaje_hacienda, fecha_emision, fecha_envio, fecha_aceptacion, intentos_envio, proximo_intento, ruta_archivo
+        FROM principal.comprobantes
+      `);
+      for (const tabla of ["detalle_ventas", "comprobantes", "ventas", "productos"]) {
+        await dbRun(dbHacienda, `DROP TABLE IF EXISTS principal.${tabla}`);
       }
-    });
-
-    // Tabla de auditoría
-    db.run(`
-      CREATE TABLE IF NOT EXISTS auditoria (
-        id INTEGER PRIMARY KEY,
-        usuario_id INTEGER,
-        accion TEXT NOT NULL,
-        tabla TEXT,
-        registro_id INTEGER,
-        datos_antiguos TEXT,
-        datos_nuevos TEXT,
-        ip_address TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
-      )
-    `);
-
-    console.log("✓ Base de datos inicializada");
-  });
+      await dbRun(dbHacienda, "COMMIT");
+      console.log("✓ Migración: ventas y comprobantes movidos a hacienda.db");
+    } catch (error) {
+      await dbRun(dbHacienda, "ROLLBACK");
+      throw error;
+    }
+  } finally {
+    await dbRun(dbHacienda, `DETACH DATABASE principal`);
+  }
 }
 
 // ==========================================
@@ -202,16 +274,6 @@ function fechaLocalHoy() {
   return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
     .map((n) => String(n).padStart(2, "0"))
     .join("-");
-}
-
-// db.run como promesa
-function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ lastID: this.lastID, changes: this.changes });
-    });
-  });
 }
 
 // Escapar texto para XML
@@ -283,67 +345,19 @@ const userService = {
   }
 };
 
-// SERVICE: Productos
+// SERVICE: Productos (FacInve.DBF)
 const productService = {
-  getAllProducts: () => {
-    return new Promise((resolve, reject) => {
-      db.all(`SELECT * FROM productos WHERE activo = 1`, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      });
-    });
-  },
+  getAllProducts: () => inventario.listar(),
 
-  getProductById: (id) => {
-    return new Promise((resolve, reject) => {
-      db.get(`SELECT * FROM productos WHERE id = ? AND activo = 1`, [id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-  },
+  getProductById: (id) => inventario.obtener(id),
 
-  searchProducts: (search) => {
-    return new Promise((resolve, reject) => {
-      const query = `%${search}%`;
-      db.all(
-        `SELECT * FROM productos WHERE activo = 1 AND (nombre LIKE ? OR codigo_barras LIKE ?)`,
-        [query, query],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
-    });
-  },
+  searchProducts: (search) => inventario.buscar(search),
 
-  createProduct: (data) => {
-    return new Promise((resolve, reject) => {
-      const { codigo_barras, nombre, codigo_cabys, precio_venta, stock_actual, descripcion } = data;
-      db.run(
-        `INSERT INTO productos (codigo_barras, nombre, codigo_cabys, precio_venta, stock_actual, descripcion)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [codigo_barras, nombre, codigo_cabys, precio_venta, stock_actual, descripcion],
-        function (err) {
-          if (err) reject(err);
-          else resolve({ id: this.lastID });
-        }
-      );
-    });
-  },
+  createProduct: (data) => inventario.agregar(data),
 
-  updateStock: (productId, cantidad) => {
-    return new Promise((resolve, reject) => {
-      db.run(
-        `UPDATE productos SET stock_actual = stock_actual - ? WHERE id = ?`,
-        [cantidad, productId],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
-  }
+  updateStock: (productId, cantidad) => inventario.descontarStock(productId, cantidad),
+
+  addStock: (productId, cantidad) => inventario.ajustarStock(productId, cantidad)
 };
 
 // SERVICE: Ventas
@@ -365,7 +379,7 @@ const salesService = {
         throw new Error(`Cantidad inválida para el producto ${item.productId}`);
       }
 
-      const producto = await productService.getProductById(item.productId);
+      const producto = productService.getProductById(item.productId);
       if (!producto) throw new Error(`Producto ${item.productId} no encontrado`);
 
       const itemSubtotal = producto.precio_venta * cantidad;
@@ -374,6 +388,10 @@ const salesService = {
       totalIva += itemIva;
       lineas.push({
         productId: producto.id,
+        codigo: producto.codigo,
+        nombre: producto.nombre,
+        cabys: producto.codigo_cabys,
+        tarifa: producto.impuesto_venta,
         cantidad,
         precio: producto.precio_venta,
         subtotal: itemSubtotal,
@@ -385,6 +403,7 @@ const salesService = {
     const numeroVenta = `VENTA-${Date.now()}`;
 
     const { lastID: ventaId } = await dbRun(
+      dbHacienda,
       `INSERT INTO ventas (numero_venta, usuario_id, cliente_id, total_subtotal, total_iva, total_venta, metodo_pago, notas)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [numeroVenta, usuarioId, clientId, subtotal, totalIva, totalVenta, medioPago, notas]
@@ -393,11 +412,17 @@ const salesService = {
     // Guardar detalles y actualizar stock
     for (const linea of lineas) {
       await dbRun(
-        `INSERT INTO detalle_ventas (venta_id, producto_id, cantidad, precio_unitario, subtotal, iva)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [ventaId, linea.productId, linea.cantidad, linea.precio, linea.subtotal, linea.iva]
+        dbHacienda,
+        `INSERT INTO detalle_ventas (venta_id, producto_codigo, nombre, codigo_cabys, cantidad, precio_unitario, subtotal, iva, tarifa_iva)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [ventaId, linea.codigo, linea.nombre, linea.cabys, linea.cantidad, linea.precio, linea.subtotal, linea.iva, linea.tarifa]
       );
-      await productService.updateStock(linea.productId, linea.cantidad);
+      // La venta ya quedó registrada: un fallo al escribir el DBF no la anula
+      try {
+        productService.updateStock(linea.productId, linea.cantidad);
+      } catch (error) {
+        console.error(`❌ No se pudo descontar stock de ${linea.codigo}:`, error.message);
+      }
     }
 
     // Registrar en auditoría
@@ -422,50 +447,32 @@ const salesService = {
     };
   },
 
-  getSaleById: (ventaId) => {
-    return new Promise((resolve, reject) => {
-      db.get(
-        `SELECT v.*, u.username FROM ventas v
-         LEFT JOIN usuarios u ON v.usuario_id = u.id
-         WHERE v.id = ?`,
-        [ventaId],
-        (err, venta) => {
-          if (err) return reject(err);
-          if (!venta) return resolve(null);
+  getSaleById: async (ventaId) => {
+    const venta = await dbGet(dbHacienda, `SELECT * FROM ventas WHERE id = ?`, [ventaId]);
+    if (!venta) return null;
 
-          db.all(
-            `SELECT dv.*, p.nombre, p.codigo_cabys FROM detalle_ventas dv
-             JOIN productos p ON dv.producto_id = p.id
-             WHERE dv.venta_id = ?`,
-            [ventaId],
-            (err, detalles) => {
-              if (err) reject(err);
-              else resolve({ ...venta, detalles });
-            }
-          );
-        }
-      );
-    });
+    const usuario = await userService.getUserById(venta.usuario_id);
+    const detalles = await dbAll(dbHacienda, `SELECT * FROM detalle_ventas WHERE venta_id = ?`, [ventaId]);
+    return { ...venta, username: usuario ? usuario.username : null, detalles };
   },
 
-  getDailySales: (fecha = null) => {
-    return new Promise((resolve, reject) => {
-      // fecha se guarda en UTC: comparar por día local para que las ventas
-      // de la noche no caigan en el día siguiente
-      const fechaFiltro = fecha || fechaLocalHoy();
-      db.all(
-        `SELECT v.*, DATETIME(v.fecha, 'localtime') AS fecha_local, u.username,
-                (SELECT COALESCE(SUM(dv.cantidad), 0) FROM detalle_ventas dv WHERE dv.venta_id = v.id) AS total_articulos
-         FROM ventas v
-         LEFT JOIN usuarios u ON v.usuario_id = u.id
-         WHERE DATE(v.fecha, 'localtime') = ? ORDER BY v.fecha DESC`,
-        [fechaFiltro],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
-    });
+  getDailySales: async (fecha = null) => {
+    // fecha se guarda en UTC: comparar por día local para que las ventas
+    // de la noche no caigan en el día siguiente
+    const fechaFiltro = fecha || fechaLocalHoy();
+    const ventas = await dbAll(
+      dbHacienda,
+      `SELECT v.*, DATETIME(v.fecha, 'localtime') AS fecha_local,
+              (SELECT COALESCE(SUM(dv.cantidad), 0) FROM detalle_ventas dv WHERE dv.venta_id = v.id) AS total_articulos
+       FROM ventas v
+       WHERE DATE(v.fecha, 'localtime') = ? ORDER BY v.fecha DESC`,
+      [fechaFiltro]
+    );
+
+    // Los usuarios están en la BD principal
+    const usuarios = await dbAll(db, `SELECT id, username FROM usuarios`);
+    const nombres = new Map(usuarios.map((u) => [u.id, u.username]));
+    return ventas.map((v) => ({ ...v, username: nombres.get(v.usuario_id) || null }));
   }
 };
 
@@ -486,12 +493,13 @@ const facturacionService = {
       const precioUnitario = parseFloat(detalle.precio_unitario) || 0;
       const subtotal = parseFloat(detalle.subtotal) || 0;
       const iva = parseFloat(detalle.iva) || 0;
+      const tarifa = detalle.tarifa_iva ?? 13;
       
       detallesXML += `
     <LineaDetalle>
       <NumeroLineaDetalle>${index + 1}</NumeroLineaDetalle>
       <CodigoActividad>${haciendaConfig.codigoActividad}</CodigoActividad>
-      <CodigoProducto>${detalle.producto_id}</CodigoProducto>
+      <CodigoProducto>${escapeXML(detalle.producto_codigo)}</CodigoProducto>
       <DescripcionProducto>${escapeXML(detalle.nombre || 'Producto')}</DescripcionProducto>
       <Cantidad>${cantidad}</Cantidad>
       <UnidadMedida>Unid</UnidadMedida>
@@ -501,7 +509,7 @@ const facturacionService = {
       </Descuento>
       <SubTotal>${subtotal.toFixed(2)}</SubTotal>
       <ImpuestoVentas>
-        <Tarifa>13</Tarifa>
+        <Tarifa>${tarifa}</Tarifa>
         <Monto>${iva.toFixed(2)}</Monto>
       </ImpuestoVentas>
       <MontoNeto>${subtotal.toFixed(2)}</MontoNeto>
@@ -677,7 +685,20 @@ app.post("/api/auth/register", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "No tienes permiso" });
     }
 
-    const { username, password, email, rol } = req.body;
+    const { password, email } = req.body || {};
+    const username = String(req.body?.username ?? "").trim();
+    const rol = req.body?.rol || "cajero";
+
+    if (!username || !password) {
+      return res.status(400).json({ error: "Usuario y contraseña requeridos" });
+    }
+    if (!ROLES.includes(rol)) {
+      return res.status(400).json({ error: "Rol inválido" });
+    }
+    if (await userService.getUserByUsername(username)) {
+      return res.status(409).json({ error: `El usuario ${username} ya existe` });
+    }
+
     const usuario = await userService.createUser(username, password, email, rol);
     
     await registrarAuditoria(req.usuarioId, "USUARIO_CREADO", "usuarios", usuario.id, null, usuario);
@@ -701,7 +722,7 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 // PRODUCTOS
 app.get("/api/products", authMiddleware, async (req, res) => {
   try {
-    const productos = await productService.getAllProducts();
+    const productos = productService.getAllProducts();
     res.json(productos);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -712,7 +733,7 @@ app.get("/api/products/search", authMiddleware, async (req, res) => {
   try {
     const { q } = req.query;
     if (!q) return res.json([]);
-    const productos = await productService.searchProducts(q);
+    const productos = productService.searchProducts(q);
     res.json(productos);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -721,14 +742,46 @@ app.get("/api/products/search", authMiddleware, async (req, res) => {
 
 app.post("/api/products", authMiddleware, async (req, res) => {
   try {
-    if (req.rol !== "admin" && req.rol !== "gerente" && req.rol !== "cajero") {
+    if (req.rol !== "admin") {
       return res.status(403).json({ error: "No tienes permiso" });
     }
 
-    const producto = await productService.createProduct(req.body);
+    const producto = productService.createProduct(req.body);
     await registrarAuditoria(req.usuarioId, "PRODUCTO_CREADO", "productos", producto.id, null, req.body);
     
     res.status(201).json(producto);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sumar existencias a un producto ya creado (solo admin)
+app.post("/api/products/:id/stock", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+
+    const cantidad = Number(req.body?.cantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      return res.status(400).json({ error: "Cantidad inválida" });
+    }
+
+    const anterior = productService.getProductById(req.params.id);
+    if (!anterior) return res.status(404).json({ error: "Producto no encontrado" });
+    const stockAnterior = anterior.stock_actual;
+
+    const producto = productService.addStock(req.params.id, cantidad);
+    await registrarAuditoria(
+      req.usuarioId,
+      "STOCK_AGREGADO",
+      "productos",
+      producto.id,
+      { stock_actual: stockAnterior },
+      { codigo: producto.codigo, cantidad, stock_actual: producto.stock_actual }
+    );
+
+    res.json(producto);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -767,7 +820,7 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
 
     // Guardar XML como ARCHIVO en disco
     const hoy = new Date().toISOString().split('T')[0];
-    const carpetaComprobantes = path.join(__dirname, '../comprobantes', hoy);
+    const carpetaComprobantes = path.join(COMPROBANTES_PATH, hoy);
     
     // Crear carpeta si no existe
     mkdirp.sync(carpetaComprobantes);
@@ -778,8 +831,9 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
     fs.writeFileSync(rutaXML, xmlFirmado);
     console.log(`✓ XML guardado en: ${rutaXML}`);
 
-    // Guardar comprobante en BD
+    // Guardar comprobante en BD de Hacienda
     await dbRun(
+      dbHacienda,
       `INSERT INTO comprobantes (venta_id, tipo_comprobante, clave_hacienda, xml_content, estado_hacienda, fecha_emision, ruta_archivo)
        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
       [venta.ventaId, "04", claveHacienda, xmlFirmado, "pendiente", rutaXML]
@@ -867,21 +921,28 @@ app.get("/health", (req, res) => {
 // 7. INICIAR SERVIDOR
 // ==========================================
 
-initializeDatabase();
-
-app.listen(PORT, () => {
-  console.log(`
+initializeDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`
 ╔════════════════════════════════════════╗
 ║   POS Costa Rica v1.0 Beta             ║
 ║   Puerto: ${PORT}                          ║
-║   BD: ${DB_PATH}
+║   BD usuarios: ${DB_PATH}
+║   BD Hacienda: ${DB_HACIENDA_PATH}
+║   Productos: ${INVENTARIO_PATH}
 ║   Comprobantes: ${COMPROBANTES_PATH}
 ║   ✓ Persistencia: SÍ                    ║
 ║   ✓ Autenticación: SÍ                   ║
 ║   ✓ XML en archivos: SÍ                 ║
 ║   ⏳ Hacienda: En desarrollo             ║
 ╚════════════════════════════════════════╝
-  `);
-});
+      `);
+    });
+  })
+  .catch((error) => {
+    console.error("❌ No se pudo inicializar la base de datos:", error);
+    process.exit(1);
+  });
 
 module.exports = app;

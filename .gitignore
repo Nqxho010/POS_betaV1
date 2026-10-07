@@ -1,0 +1,13 @@
+# Dependencias (se instalan con npm install)
+node_modules/
+
+# Configuración y secretos de cada cliente (plantilla: backend/src/.env.example)
+.env
+*.p12
+
+# Datos de cada cliente
+backend/database/
+backend/comprobantes/
+
+# Build del frontend
+frontend/build/
