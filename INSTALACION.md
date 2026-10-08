@@ -155,8 +155,8 @@ Se abrirá automáticamente en http://localhost:3000
 
 ### 1. Pantalla de Login
 ```
-Usuario: cajero
-Contraseña: 1234
+Usuario: admin
+Contraseña: la de ADMIN_PASSWORD en el .env
 ```
 
 ### 2. Productos

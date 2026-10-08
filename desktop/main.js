@@ -17,7 +17,7 @@ const FRONTEND_DIR = app.isPackaged
   ? path.join(RAIZ, "frontend")
   : path.join(RAIZ, "frontend", "build");
 
-// Carpeta de datos del cliente: bases, FacInve.DBF, comprobantes, respaldos y .env
+// Carpeta de datos del cliente: bases, FacInve.DBF, respaldos y .env
 const DATA_DIR = path.join(app.getPath("userData"), "datos");
 const ENV_PATH = path.join(DATA_DIR, ".env");
 const INVENTARIO_PATH = path.join(DATA_DIR, "database", "FacInve.DBF");

@@ -1480,3 +1480,161 @@ h3 .icon {
     margin-top: 14px;
   }
 }
+
+/* ==========================================
+   TIQUETE (papel térmico de 80 mm)
+   ========================================== */
+
+.ticket-print {
+  display: none;
+}
+
+.ticket {
+  width: 72mm;
+  margin: 0 auto;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  color: black;
+}
+
+.ticket-header,
+.ticket-meta {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed black;
+}
+
+.ticket-header {
+  align-items: center;
+  text-align: center;
+}
+
+.ticket-header strong {
+  font-size: 15px;
+}
+
+.ticket-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  margin-bottom: 4px;
+}
+
+.ticket-name {
+  grid-column: 1 / -1;
+  font-weight: bold;
+}
+
+.ticket-totals {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed black;
+}
+
+.ticket-totals > div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.ticket-totals .ticket-total {
+  font-size: 15px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.ticket-footer {
+  margin-top: 10px;
+  text-align: center;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--tinta);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.last-sale-info .btn-secondary {
+  margin-top: 8px;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    background: white;
+  }
+
+  .app {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Al imprimir solo sale el tiquete */
+  .app > *:not(.ticket-print) {
+    display: none !important;
+  }
+
+  .ticket-print {
+    display: block;
+  }
+}
+
+/* ==========================================
+   DATOS DEL CLIENTE EN EL COBRO
+   ========================================== */
+
+.customer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.customer-toggle input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.customer-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.customer-fields input {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1.5px solid var(--linea-fuerte);
+  border-radius: var(--radio-chico);
+  background: var(--crema-clara);
+  font-size: 13px;
+  color: var(--tinta);
+}
+
+.customer-fields input:focus {
+  outline: none;
+  border-color: var(--tinta);
+  box-shadow: 0 0 0 3px rgba(111, 164, 238, 0.45);
+}
+
+/* Nombre y correo ocupan todo el ancho */
+.customer-fields input:first-child,
+.customer-fields input:last-child {
+  grid-column: 1 / -1;
+}

@@ -156,8 +156,26 @@ class InventarioDBF {
     return exactos.concat(parciales).slice(0, MAX_RESULTADOS);
   }
 
-  descontarStock(id, cantidad) {
-    return this.ajustarStock(id, -cantidad);
+  // Descuenta las existencias de toda una venta en una sola escritura: o se
+  // aplican todas las líneas o ninguna. lineas: [{ id, cantidad }]
+  descontarVarios(lineas) {
+    this._sincronizar();
+    const nuevos = new Map();
+    for (const { id, cantidad } of lineas) {
+      const producto = this.porId.get(Number(id));
+      if (!producto) throw new Error(`Producto ${id} no encontrado`);
+      const actual = nuevos.has(producto) ? nuevos.get(producto) : producto.stock_actual;
+      nuevos.set(producto, redondear(actual - cantidad));
+    }
+
+    const campo = this.campos.CANT;
+    this._escribir(
+      [...nuevos].map(([producto, stock]) => [
+        this.tamEncabezado + (producto.id - 1) * this.tamRegistro + campo.desplazamiento,
+        this._codificarNumero("CANT", stock)
+      ])
+    );
+    for (const [producto, stock] of nuevos) producto.stock_actual = stock;
   }
 
   // Suma (o resta, si es negativa) una cantidad a CANT en el DBF

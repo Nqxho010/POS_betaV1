@@ -75,6 +75,12 @@ const apiService = {
       body: JSON.stringify(saleData)
     }),
 
+  getTicket: (ventaId) => apiService.request(`/sales/${ventaId}/ticket`),
+
+  changePassword: (actual, nueva) => apiService.post("/auth/password", { actual, nueva }),
+
+  resetPassword: (usuarioId, nueva) => apiService.post(`/users/${usuarioId}/password`, { nueva }),
+
   getSales: (fecha) =>
     apiService.request(`/sales?fecha=${encodeURIComponent(fecha)}`),
 
@@ -145,6 +151,117 @@ function Icon({ nombre, size = 20 }) {
     >
       {ICONOS[nombre]}
     </svg>
+  );
+}
+
+// Montos redondeados a céntimos, igual que en el backend
+const redondear = (monto) => Math.round((Number(monto) + Number.EPSILON) * 100) / 100;
+
+// Lo que paga el cliente por una línea del carrito (precio final, con su impuesto)
+const totalLinea = (item) => redondear(item.total * item.cantidad);
+
+const NOMBRES_PAGO = { cash: "Efectivo", sinpe: "SINPE Móvil", tarjeta: "Tarjeta" };
+
+// Tiquete que se entrega al cliente (papel térmico de 80 mm)
+function Ticket({ tiquete }) {
+  const { negocio } = tiquete;
+  const colones = (monto) =>
+    "₡" + (Number(monto) || 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div className="ticket">
+      <div className="ticket-header">
+        <strong>{negocio.nombre}</strong>
+        {negocio.cedula && <span>Cédula: {negocio.cedula}</span>}
+        {negocio.direccion && <span>{negocio.direccion}</span>}
+        {negocio.telefono && <span>Tel: {negocio.telefono}</span>}
+      </div>
+
+      <div className="ticket-meta">
+        <span>Tiquete N° {tiquete.numero}</span>
+        <span>{(tiquete.fecha || "").slice(0, 16)}</span>
+        {tiquete.cajero && <span>Cajero: {tiquete.cajero}</span>}
+      </div>
+
+      {tiquete.cliente && (
+        <div className="ticket-meta">
+          {tiquete.cliente.nombre && <span>Cliente: {tiquete.cliente.nombre}</span>}
+          {tiquete.cliente.cedula && <span>Cédula: {tiquete.cliente.cedula}</span>}
+          {tiquete.cliente.telefono && <span>Tel: {tiquete.cliente.telefono}</span>}
+          {tiquete.cliente.correo && <span>Correo: {tiquete.cliente.correo}</span>}
+        </div>
+      )}
+
+      <div className="ticket-lines">
+        {tiquete.lineas.map((linea, indice) => (
+          <div key={indice} className="ticket-line">
+            <span className="ticket-name">{linea.nombre}</span>
+            <span>
+              {linea.cantidad} x {colones(linea.precio)}
+            </span>
+            <span>{colones(linea.total)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="ticket-totals">
+        <div className="ticket-total">
+          <span>TOTAL</span>
+          <span>{colones(tiquete.total)}</span>
+        </div>
+        <div>
+          <span>Pago</span>
+          <span>{NOMBRES_PAGO[tiquete.metodoPago] || tiquete.metodoPago}</span>
+        </div>
+        {tiquete.metodoPago === "cash" && tiquete.montoRecibido != null && (
+          <>
+            <div>
+              <span>Recibido</span>
+              <span>{colones(tiquete.montoRecibido)}</span>
+            </div>
+            <div>
+              <span>Vuelto</span>
+              <span>{colones(tiquete.vuelto)}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <p className="ticket-footer">¡Gracias por su compra!</p>
+    </div>
+  );
+}
+
+// Manda un tiquete a la impresora: imprimirTiquete(tiquete). En pantalla no se
+// ve; al imprimir es lo único que sale (ver @media print en App.css)
+let imprimirTiquete = () => {};
+
+function TicketPrinter() {
+  const [tiquete, setTiquete] = useState(null);
+
+  useEffect(() => {
+    imprimirTiquete = setTiquete;
+    return () => {
+      imprimirTiquete = () => {};
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!tiquete) return undefined;
+    const terminar = () => setTiquete(null);
+    window.addEventListener("afterprint", terminar);
+    const espera = setTimeout(() => window.print(), 50);
+    return () => {
+      clearTimeout(espera);
+      window.removeEventListener("afterprint", terminar);
+    };
+  }, [tiquete]);
+
+  if (!tiquete) return null;
+  return (
+    <div className="ticket-print">
+      <Ticket tiquete={tiquete} />
+    </div>
   );
 }
 
@@ -306,8 +423,8 @@ function useAtajo(tecla, accion, activo = true) {
 // ==========================================
 
 function LoginScreen({ onLogin }) {
-  const [username, setUsername] = useState("cajero");
-  const [password, setPassword] = useState("1234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -330,11 +447,13 @@ function LoginScreen({ onLogin }) {
           <span className="brand-mark" aria-hidden="true" />
           POS Costa Rica
         </h1>
-        <p>Sistema de Punto de Venta con Facturación Electrónica</p>
+        <p>Sistema de Punto de Venta</p>
         <form onSubmit={handleLogin}>
           <input
             type="text"
             placeholder="Usuario"
+            autoFocus
+            autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
@@ -356,13 +475,8 @@ function LoginScreen({ onLogin }) {
 // ==========================================
 
 function Cart({ items, onRemoveItem, onQuantityChange }) {
-  // Calcular totales
-  const subtotal = items.reduce((sum, item) => sum + (item.precio_venta * item.cantidad), 0);
-  const iva = items.reduce(
-    (sum, item) => sum + item.precio_venta * item.cantidad * (item.impuesto_venta / 100),
-    0
-  );
-  const total = subtotal + iva;
+  // Precios finales: lo que paga el cliente
+  const total = redondear(items.reduce((sum, item) => sum + totalLinea(item), 0));
 
   return (
     <div className="cart">
@@ -398,7 +512,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
                 </div>
 
                 <div className="item-price">
-                  <p>₡{(item.precio_venta * item.cantidad).toLocaleString()}</p>
+                  <p>{formatoColones(totalLinea(item))}</p>
                 </div>
 
                 <button
@@ -412,17 +526,9 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
           </div>
 
           <div className="cart-summary">
-            <div className="summary-row">
-              <span>Subtotal:</span>
-              <span>₡{subtotal.toLocaleString()}</span>
-            </div>
-            <div className="summary-row">
-              <span>IVA:</span>
-              <span>₡{iva.toLocaleString()}</span>
-            </div>
             <div className="summary-row total">
               <span>TOTAL:</span>
-              <span>₡{total.toLocaleString()}</span>
+              <span>{formatoColones(total)}</span>
             </div>
           </div>
         </>
@@ -543,12 +649,17 @@ function ProductSearch({ onAddToCart, activo }) {
 // COMPONENTE: Formulario de Pago
 // ==========================================
 
+const CLIENTE_VACIO = { nombre: "", cedula: "", telefono: "", correo: "" };
+
 function PaymentForm({ cartTotal, onPaymentComplete, isProcessing, activo }) {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [amountReceived, setAmountReceived] = useState("");
   const [sinpeRef, setSinpeRef] = useState("");
   const [cardLast4, setCardLast4] = useState("");
   const montoRef = useRef(null);
+  const [conCliente, setConCliente] = useState(false);
+  const [cliente, setCliente] = useState(CLIENTE_VACIO);
+  const cambiarCliente = (campo) => (e) => setCliente({ ...cliente, [campo]: e.target.value });
 
   const change = paymentMethod === "cash" ? (amountReceived || 0) - cartTotal : 0;
 
@@ -563,7 +674,8 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing, activo }) {
     const ok = await onPaymentComplete({
       method: paymentMethod,
       amountReceived: paymentMethod === "cash" ? amountReceived : cartTotal,
-      reference: paymentMethod === "sinpe" ? sinpeRef : paymentMethod === "tarjeta" ? cardLast4 : ""
+      reference: paymentMethod === "sinpe" ? sinpeRef : paymentMethod === "tarjeta" ? cardLast4 : "",
+      cliente: conCliente ? cliente : null
     });
 
     // Limpiar solo si la venta se registró (si falló, el cajero puede reintentar)
@@ -571,6 +683,8 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing, activo }) {
       setAmountReceived("");
       setSinpeRef("");
       setCardLast4("");
+      setCliente(CLIENTE_VACIO);
+      setConCliente(false);
     }
   };
 
@@ -647,6 +761,49 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing, activo }) {
             onChange={(e) => setCardLast4(e.target.value.slice(0, 4))}
             placeholder="0000"
             maxLength="4"
+          />
+        </div>
+      )}
+
+      <label className="customer-toggle">
+        <input
+          type="checkbox"
+          checked={conCliente}
+          onChange={(e) => setConCliente(e.target.checked)}
+        />
+        Tiquete a nombre del cliente
+      </label>
+
+      {conCliente && (
+        <div className="customer-fields">
+          <input
+            type="text"
+            placeholder="Nombre"
+            maxLength="100"
+            value={cliente.nombre}
+            onChange={cambiarCliente("nombre")}
+            autoFocus
+          />
+          <input
+            type="text"
+            placeholder="Cédula"
+            maxLength="20"
+            value={cliente.cedula}
+            onChange={cambiarCliente("cedula")}
+          />
+          <input
+            type="tel"
+            placeholder="Teléfono"
+            maxLength="20"
+            value={cliente.telefono}
+            onChange={cambiarCliente("telefono")}
+          />
+          <input
+            type="email"
+            placeholder="Correo"
+            maxLength="100"
+            value={cliente.correo}
+            onChange={cambiarCliente("correo")}
           />
         </div>
       )}
@@ -731,6 +888,12 @@ function FiltroFecha({ fecha, onChange, onRecargar, cargando }) {
 
 // El backend devuelve al cajero solo sus ventas y al admin las de todos
 function ReportsScreen({ esAdmin }) {
+  const reimprimir = (ventaId) =>
+    apiService
+      .getTicket(ventaId)
+      .then(imprimirTiquete)
+      .catch((err) => notify("error", "No se pudo cargar el tiquete: " + err.message));
+
   const [fecha, setFecha] = useState(fechaHoy);
   const { datos, error, cargando, recargar } = useDatosPorFecha(apiService.getSales, fecha);
   const ventas = Array.isArray(datos) ? datos : [];
@@ -785,26 +948,32 @@ function ReportsScreen({ esAdmin }) {
               <thead>
                 <tr>
                   <th>Hora</th>
-                  <th>Venta #</th>
+                  <th>Tiquete</th>
                   {esAdmin && <th>Cajero</th>}
                   <th>Método</th>
                   <th className="num">Artículos</th>
                   <th className="num">Subtotal</th>
                   <th className="num">IVA</th>
                   <th className="num">Total</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {ventas.map((venta) => (
                   <tr key={venta.id}>
                     <td>{(venta.fecha_local || "").slice(11, 16)}</td>
-                    <td>{venta.numero_venta}</td>
+                    <td>{String(venta.id).padStart(6, "0")}</td>
                     {esAdmin && <td>{venta.username || "—"}</td>}
                     <td>{METODOS_PAGO[venta.metodo_pago] || venta.metodo_pago}</td>
                     <td className="num">{venta.total_articulos}</td>
                     <td className="num">{formatoColones(venta.total_subtotal)}</td>
                     <td className="num">{formatoColones(venta.total_iva)}</td>
                     <td className="num">{formatoColones(venta.total_venta)}</td>
+                    <td className="num">
+                      <button className="btn-link" onClick={() => reimprimir(venta.id)}>
+                        Imprimir
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1120,6 +1289,152 @@ function FormMessage({ mensaje }) {
   return <p className={mensaje.ok ? "form-msg ok" : "form-msg error"}>{mensaje.texto}</p>;
 }
 
+const LARGO_MINIMO_PASSWORD = 6;
+
+// Cualquier usuario cambia su propia contraseña
+function ChangePasswordScreen() {
+  const vacio = { actual: "", nueva: "", confirmar: "" };
+  const [form, setForm] = useState(vacio);
+  const [mensaje, setMensaje] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cambiar = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    if (form.nueva !== form.confirmar) {
+      setMensaje({ ok: false, texto: "La contraseña nueva y su confirmación no coinciden" });
+      return;
+    }
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      await apiService.changePassword(form.actual, form.nueva);
+      setMensaje({ ok: true, texto: "Contraseña cambiada" });
+      setForm(vacio);
+    } catch (error) {
+      setMensaje({ ok: false, texto: error.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-page">
+      <div className="report-card narrow">
+        <div className="report-header">
+          <h2><Icon nombre="usuario" />Cambiar mi contraseña</h2>
+        </div>
+        <form className="admin-form" onSubmit={guardar}>
+          <label>
+            Contraseña actual
+            <input
+              type="password"
+              value={form.actual}
+              onChange={cambiar("actual")}
+              autoComplete="current-password"
+              autoFocus
+              required
+            />
+          </label>
+          <label>
+            Contraseña nueva (mínimo {LARGO_MINIMO_PASSWORD} caracteres)
+            <input
+              type="password"
+              value={form.nueva}
+              onChange={cambiar("nueva")}
+              autoComplete="new-password"
+              minLength={LARGO_MINIMO_PASSWORD}
+              required
+            />
+          </label>
+          <label>
+            Repetir contraseña nueva
+            <input
+              type="password"
+              value={form.confirmar}
+              onChange={cambiar("confirmar")}
+              autoComplete="new-password"
+              minLength={LARGO_MINIMO_PASSWORD}
+              required
+            />
+          </label>
+          <button className="btn-refresh" type="submit" disabled={guardando}>
+            {guardando ? "Guardando..." : "Cambiar contraseña"}
+          </button>
+          <FormMessage mensaje={mensaje} />
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// El admin le pone una contraseña nueva a un usuario que olvidó la suya o quedó bloqueado
+function ResetPasswordForm() {
+  const [usuarios, setUsuarios] = useState([]);
+  const [usuarioId, setUsuarioId] = useState("");
+  const [nueva, setNueva] = useState("");
+  const [mensaje, setMensaje] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    apiService.getUsers().then(setUsuarios).catch(() => setUsuarios([]));
+  }, []);
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      await apiService.resetPassword(usuarioId, nueva);
+      const usuario = usuarios.find((u) => String(u.id) === usuarioId);
+      setMensaje({ ok: true, texto: `Contraseña de "${usuario?.username}" restablecida` });
+      setUsuarioId("");
+      setNueva("");
+    } catch (error) {
+      setMensaje({ ok: false, texto: error.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-card">
+      <div className="report-header">
+        <h2><Icon nombre="usuario" />Restablecer contraseña</h2>
+      </div>
+      <form className="admin-form" onSubmit={guardar}>
+        <label>
+          Usuario
+          <select value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} required>
+            <option value="">Seleccione un usuario</option>
+            {usuarios.map((usuario) => (
+              <option key={usuario.id} value={usuario.id}>
+                {usuario.username} ({usuario.rol})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Contraseña nueva (mínimo {LARGO_MINIMO_PASSWORD} caracteres)
+          <input
+            type="password"
+            value={nueva}
+            onChange={(e) => setNueva(e.target.value)}
+            autoComplete="new-password"
+            minLength={LARGO_MINIMO_PASSWORD}
+            required
+          />
+        </label>
+        <button className="btn-refresh" type="submit" disabled={guardando}>
+          {guardando ? "Guardando..." : "Restablecer contraseña"}
+        </button>
+        <FormMessage mensaje={mensaje} />
+      </form>
+    </div>
+  );
+}
+
 // Los usuarios se guardan en la BD principal (pos.db)
 function AdminUsersScreen() {
   const vacio = { username: "", password: "", email: "", rol: "cajero" };
@@ -1146,7 +1461,8 @@ function AdminUsersScreen() {
 
   return (
     <div className="report-page">
-      <div className="report-card narrow">
+      <div className="admin-grid">
+      <div className="report-card">
         <div className="report-header">
           <h2><Icon nombre="usuario" />Crear usuario</h2>
         </div>
@@ -1162,6 +1478,7 @@ function AdminUsersScreen() {
               value={form.password}
               onChange={cambiar("password")}
               autoComplete="new-password"
+              minLength={LARGO_MINIMO_PASSWORD}
               required
             />
           </label>
@@ -1181,6 +1498,8 @@ function AdminUsersScreen() {
           </button>
           <FormMessage mensaje={mensaje} />
         </form>
+      </div>
+      <ResetPasswordForm />
       </div>
     </div>
   );
@@ -1551,11 +1870,18 @@ function POSScreen({ onLogout }) {
   // F2 vuelve a Inicio (el buscador toma el cursor)
   useAtajo("F2", () => setView("inicio"));
 
-  // Con IVA, según la tarifa de cada producto
-  const cartTotal = cartItems.reduce(
-    (sum, item) => sum + item.precio_venta * item.cantidad * (1 + item.impuesto_venta / 100),
-    0
-  );
+  // Lo que paga el cliente, redondeado igual que el backend
+  const cartTotal = redondear(cartItems.reduce((sum, item) => sum + totalLinea(item), 0));
+
+  // Identifica este cobro: si se reintenta porque se perdió la respuesta, el
+  // backend no registra la venta dos veces. Cambia cuando cambia el carrito.
+  const claveVenta = useRef(null);
+  useEffect(() => {
+    claveVenta.current = null;
+  }, [cartItems]);
+
+  // F8 reimprime el tiquete de la última venta
+  useAtajo("F8", () => lastSale && imprimirTiquete(lastSale.tiquete));
 
   // Actualización funcional: dos lecturas seguidas del lector no se pisan
   const handleAddToCart = useCallback((product) => {
@@ -1595,6 +1921,10 @@ function POSScreen({ onLogout }) {
 
     setIsProcessing(true);
 
+    if (!claveVenta.current) {
+      claveVenta.current = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    }
+
     try {
       const saleData = {
         items: cartItems.map((item) => ({
@@ -1603,7 +1933,9 @@ function POSScreen({ onLogout }) {
         })),
         medioPago: paymentData.method,
         montoRecibido: paymentData.amountReceived,
-        clientId: null
+        clientId: null,
+        cliente: paymentData.cliente,
+        claveVenta: claveVenta.current
       };
 
       const response = await apiService.createSale(saleData);
@@ -1658,6 +1990,14 @@ function POSScreen({ onLogout }) {
               <Icon nombre="pantalla" size={18} />
             </button>
           )}
+          <button
+            className="btn-icon"
+            title="Cambiar mi contraseña"
+            aria-label="Cambiar mi contraseña"
+            onClick={() => setView("password")}
+          >
+            <Icon nombre="usuario" size={18} />
+          </button>
           <button className="btn-logout" onClick={onLogout}>
             Cerrar sesión
           </button>
@@ -1667,6 +2007,7 @@ function POSScreen({ onLogout }) {
       {view === "productos" && <ProductsScreen />}
       {view === "reportes" && <ReportsScreen esAdmin={esAdmin} />}
       {view === "cierre" && <CashClosingScreen esAdmin={esAdmin} />}
+      {view === "password" && <ChangePasswordScreen />}
       {esAdmin && view === "admin-usuarios" && <AdminUsersScreen />}
       {esAdmin && view === "admin-inventario" && <AdminInventoryScreen />}
       {esAdmin && view === "admin-respaldos" && <AdminBackupsScreen />}
@@ -1696,9 +2037,12 @@ function POSScreen({ onLogout }) {
           {lastSale && (
             <div className="last-sale-info">
               <h3><Icon nombre="check" size={16} />Última venta</h3>
-              <p>Venta #{lastSale.numeroVenta}</p>
-              <p>Total: ₡{lastSale.total.toLocaleString()}</p>
-              <p>Comprobante: {lastSale.comprobante?.estado}</p>
+              <p>Tiquete N° {lastSale.tiquete.numero}</p>
+              <p>Total: {formatoColones(lastSale.total)}</p>
+              {lastSale.vuelto > 0 && <p>Vuelto: {formatoColones(lastSale.vuelto)}</p>}
+              <button className="btn-secondary" onClick={() => imprimirTiquete(lastSale.tiquete)}>
+                Imprimir tiquete (F8)
+              </button>
             </div>
           )}
         </div>
@@ -1725,6 +2069,7 @@ function App() {
   return (
     <div className="app">
       <Toasts />
+      <TicketPrinter />
       {isLoggedIn ? (
         <POSScreen onLogout={logout} />
       ) : (
