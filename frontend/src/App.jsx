@@ -1,10 +1,12 @@
 // ==========================================
 // FRONTEND POS - Aplicación React Principal
+// CON NAVBAR INTEGRADO
 // ==========================================
 // Archivo: frontend/src/App.jsx
 
 import React, { useState, useEffect } from "react";
 import "./App.css";
+import Navbar from "./components/Navbar";
 
 // ==========================================
 // SERVICIO API (Cliente HTTP)
@@ -12,13 +14,21 @@ import "./App.css";
 
 const API_BASE = "http://localhost:5000/api";
 
-
 const apiService = {
   setToken: (token) => {
     localStorage.setItem("token", token);
   },
 
   getToken: () => localStorage.getItem("token"),
+
+  getUsuario: () => {
+    const u = localStorage.getItem("usuario");
+    return u ? JSON.parse(u) : null;
+  },
+
+  setUsuario: (usuario) => {
+    localStorage.setItem("usuario", JSON.stringify(usuario));
+  },
 
   searchProducts: async (query) => {
     const response = await fetch(
@@ -65,6 +75,7 @@ const apiService = {
     const data = await response.json();
     if (data.token) {
       apiService.setToken(data.token);
+      apiService.setUsuario(data.usuario);
     }
     return data;
   }
@@ -83,7 +94,7 @@ function LoginScreen({ onLogin }) {
     try {
       const result = await apiService.login(username, password);
       if (result.token) {
-        onLogin();
+        onLogin(result.usuario);
       } else {
         alert("Error: " + result.error);
       }
@@ -122,7 +133,6 @@ function LoginScreen({ onLogin }) {
 // ==========================================
 
 function Cart({ items, onRemoveItem, onQuantityChange }) {
-  // Calcular totales
   const subtotal = items.reduce((sum, item) => sum + (item.precio_venta * item.cantidad), 0);
   const iva = subtotal * 0.13;
   const total = subtotal + iva;
@@ -198,7 +208,7 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
 // COMPONENTE: Búsqueda de Productos
 // ==========================================
 
-function ProductSearch({ onAddToCart, allProducts }) {
+function ProductSearch({ onAddToCart }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
 
@@ -287,7 +297,6 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
       reference: sinpeRef || cardLast4
     });
 
-    // Limpiar
     setAmountReceived("");
     setSinpeRef("");
     setCardLast4("");
@@ -379,10 +388,10 @@ function PaymentForm({ cartTotal, onPaymentComplete, isProcessing }) {
 }
 
 // ==========================================
-// COMPONENTE: Principal (POS)
+// PÁGINA: Punto de Venta (tu POSScreen original, sin header propio)
 // ==========================================
 
-function POSScreen({ onLogout }) {
+function VentaPage() {
   const [cartItems, setCartItems] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -390,7 +399,7 @@ function POSScreen({ onLogout }) {
   const cartTotal = cartItems.reduce(
     (sum, item) => sum + item.precio_venta * item.cantidad,
     0
-  ) * 1.13; // Con IVA
+  ) * 1.13;
 
   const handleAddToCart = (product) => {
     const existing = cartItems.find((item) => item.id === product.id);
@@ -446,9 +455,8 @@ function POSScreen({ onLogout }) {
       const response = await apiService.createSale(saleData);
 
       setLastSale(response);
-      setCartItems([]); // Limpiar carrito
+      setCartItems([]);
 
-      // Mostrar resumen
       setTimeout(() => {
         alert(
           `✓ Venta completada\nVenta #: ${response.numeroVenta}\nTotal: ₡${response.total.toLocaleString()}\nEstado: ${response.estado}`
@@ -463,13 +471,6 @@ function POSScreen({ onLogout }) {
 
   return (
     <div className="pos-container">
-      <header className="pos-header">
-        <h1>🛍️ POS - Punto de Venta</h1>
-        <button className="btn-logout" onClick={onLogout}>
-          Cerrar Sesión
-        </button>
-      </header>
-
       <div className="pos-content">
         <div className="pos-left">
           <ProductSearch onAddToCart={handleAddToCart} />
@@ -505,21 +506,150 @@ function POSScreen({ onLogout }) {
 }
 
 // ==========================================
+// PÁGINA: Productos (placeholder - próximo desarrollo)
+// ==========================================
+
+function ProductosPage() {
+  const [productos, setProductos] = useState([]);
+
+  useEffect(() => {
+    apiService.getAllProducts().then(setProductos).catch(console.error);
+  }, []);
+
+  return (
+    <div className="page-container">
+      <h2>📦 Gestión de Productos</h2>
+      <table className="tabla-productos">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Precio</th>
+            <th>Stock</th>
+          </tr>
+        </thead>
+        <tbody>
+          {productos.map((p) => (
+            <tr key={p.id}>
+              <td>{p.codigo_barras}</td>
+              <td>{p.nombre}</td>
+              <td>₡{p.precio_venta.toLocaleString()}</td>
+              <td>{p.stock_actual}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ==========================================
+// PÁGINA: Reportes / Cierre de Caja (usa endpoint que ya tienes)
+// ==========================================
+
+function CierrePage() {
+  const [cierre, setCierre] = useState(null);
+
+  const cargarCierre = async () => {
+    const data = await apiService.getCashClosing();
+    setCierre(data);
+  };
+
+  useEffect(() => {
+    cargarCierre();
+  }, []);
+
+  if (!cierre) return <div className="page-container">Cargando...</div>;
+
+  return (
+    <div className="page-container">
+      <h2>🔐 Cierre de Caja - {cierre.fecha}</h2>
+      <p>Total de ventas: {cierre.totalVentas}</p>
+      <ul>
+        <li>Efectivo: ₡{cierre.detallePagos.efectivo.toLocaleString()}</li>
+        <li>SINPE: ₡{cierre.detallePagos.sinpe.toLocaleString()}</li>
+        <li>Tarjeta: ₡{cierre.detallePagos.tarjeta.toLocaleString()}</li>
+      </ul>
+      <p><strong>Total: ₡{cierre.total.toLocaleString()}</strong></p>
+      <p>Total IVA: ₡{cierre.totalIVA.toLocaleString()}</p>
+      <button onClick={cargarCierre}>🔄 Actualizar</button>
+    </div>
+  );
+}
+
+function ReportesPage() {
+  return (
+    <div className="page-container">
+      <h2>📊 Reportes</h2>
+      <p>Próximamente: ventas por período, productos más vendidos, gráficos.</p>
+    </div>
+  );
+}
+
+function DevolucionesPage() {
+  return (
+    <div className="page-container">
+      <h2>↩️ Notas de Crédito / Devoluciones</h2>
+      <p>Próximamente: crear notas de crédito y gestionar devoluciones.</p>
+    </div>
+  );
+}
+
+// ==========================================
 // COMPONENTE: Principal (App)
 // ==========================================
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem("token"));
+  const [usuario, setUsuarioState] = useState(apiService.getUsuario());
+  const [currentPage, setCurrentPage] = useState("venta");
+
+  const handleLogin = (usuarioData) => {
+    setUsuarioState(usuarioData);
+    setIsLoggedIn(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("usuario");
+    setIsLoggedIn(false);
+    setUsuarioState(null);
+    setCurrentPage("venta");
+  };
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case "venta":
+        return <VentaPage />;
+      case "productos":
+        return <ProductosPage />;
+      case "reportes":
+        return <ReportesPage />;
+      case "cierre":
+        return <CierrePage />;
+      case "devoluciones":
+        return <DevolucionesPage />;
+      default:
+        return <VentaPage />;
+    }
+  };
 
   return (
     <div className="app">
       {isLoggedIn ? (
-        <POSScreen onLogout={() => {
-          localStorage.removeItem("token");
-          setIsLoggedIn(false);
-        }} />
+        <>
+          <Navbar
+            usuario={usuario}
+            onLogout={handleLogout}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+          />
+          <main className="main-content">
+            {renderPage()}
+          </main>
+        </>
       ) : (
-        <LoginScreen onLogin={() => setIsLoggedIn(true)} />
+        <LoginScreen onLogin={handleLogin} />
       )}
     </div>
   );

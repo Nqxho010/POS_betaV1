@@ -6,9 +6,9 @@
     <ProveedorSistema>3101234567</ProveedorSistema>
     <NombreComercial>Mi Negocio</NombreComercial>
     <TipoComprobante>04</TipoComprobante>
-    <FechaEmision>2026-07-04T02:12:29.606Z</FechaEmision>
+    <FechaEmision>2026-10-07T01:33:37.590Z</FechaEmision>
     <Moneda>CRC</Moneda>
-    <NumeroConsecutivo>001-001-294133</NumeroConsecutivo>
+    <NumeroConsecutivo>001-001-385412</NumeroConsecutivo>
     <CodigoActividad>6201</CodigoActividad>
     <Provincia>1</Provincia>
     <Canton>1</Canton>
@@ -35,14 +35,32 @@
       </ImpuestoVentas>
       <MontoNeto>5000.00</MontoNeto>
     </LineaDetalle>
+    <LineaDetalle>
+      <NumeroLineaDetalle>2</NumeroLineaDetalle>
+      <CodigoActividad>6201</CodigoActividad>
+      <CodigoProducto>4</CodigoProducto>
+      <DescripcionProducto>Azúcar Blanca</DescripcionProducto>
+      <Cantidad>1</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <PrecioUnitario>2500.00</PrecioUnitario>
+      <Descuento>
+        <MontoDescuento>0.00</MontoDescuento>
+      </Descuento>
+      <SubTotal>2500.00</SubTotal>
+      <ImpuestoVentas>
+        <Tarifa>13</Tarifa>
+        <Monto>325.00</Monto>
+      </ImpuestoVentas>
+      <MontoNeto>2500.00</MontoNeto>
+    </LineaDetalle>
   </DetalleServicio>
   <ResumenFactura>
     <CodigoMoneda>CRC</CodigoMoneda>
-    <TotalServGravados>5000.00</TotalServGravados>
+    <TotalServGravados>7500.00</TotalServGravados>
     <TotalServExentos>0.00</TotalServExentos>
-    <TotalImpuestoVentas>650.00</TotalImpuestoVentas>
+    <TotalImpuestoVentas>975.00</TotalImpuestoVentas>
     <TotalImpuestoSelectivo>0.00</TotalImpuestoSelectivo>
-    <TotalComprobante>5650.00</TotalComprobante>
+    <TotalComprobante>8475.00</TotalComprobante>
   </ResumenFactura>
   <CodigoSeguridad></CodigoSeguridad>
 </FacturaElectronicaV4_4>

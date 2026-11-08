@@ -6,9 +6,9 @@
     <ProveedorSistema>3101234567</ProveedorSistema>
     <NombreComercial>Mi Negocio</NombreComercial>
     <TipoComprobante>04</TipoComprobante>
-    <FechaEmision>2026-07-04T02:36:32.647Z</FechaEmision>
+    <FechaEmision>2026-10-06T16:02:23.244Z</FechaEmision>
     <Moneda>CRC</Moneda>
-    <NumeroConsecutivo>001-001-915941</NumeroConsecutivo>
+    <NumeroConsecutivo>001-001-976799</NumeroConsecutivo>
     <CodigoActividad>6201</CodigoActividad>
     <Provincia>1</Provincia>
     <Canton>1</Canton>
@@ -22,18 +22,18 @@
       <CodigoActividad>6201</CodigoActividad>
       <CodigoProducto>1</CodigoProducto>
       <DescripcionProducto>Arroz</DescripcionProducto>
-      <Cantidad>2</Cantidad>
+      <Cantidad>1</Cantidad>
       <UnidadMedida>Unid</UnidadMedida>
       <PrecioUnitario>5000.00</PrecioUnitario>
       <Descuento>
         <MontoDescuento>0.00</MontoDescuento>
       </Descuento>
-      <SubTotal>10000.00</SubTotal>
+      <SubTotal>5000.00</SubTotal>
       <ImpuestoVentas>
         <Tarifa>13</Tarifa>
-        <Monto>1300.00</Monto>
+        <Monto>650.00</Monto>
       </ImpuestoVentas>
-      <MontoNeto>10000.00</MontoNeto>
+      <MontoNeto>5000.00</MontoNeto>
     </LineaDetalle>
     <LineaDetalle>
       <NumeroLineaDetalle>2</NumeroLineaDetalle>
@@ -53,14 +53,32 @@
       </ImpuestoVentas>
       <MontoNeto>3000.00</MontoNeto>
     </LineaDetalle>
+    <LineaDetalle>
+      <NumeroLineaDetalle>3</NumeroLineaDetalle>
+      <CodigoActividad>6201</CodigoActividad>
+      <CodigoProducto>3</CodigoProducto>
+      <DescripcionProducto>Azúcar Blanca</DescripcionProducto>
+      <Cantidad>1</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <PrecioUnitario>2500.00</PrecioUnitario>
+      <Descuento>
+        <MontoDescuento>0.00</MontoDescuento>
+      </Descuento>
+      <SubTotal>2500.00</SubTotal>
+      <ImpuestoVentas>
+        <Tarifa>13</Tarifa>
+        <Monto>325.00</Monto>
+      </ImpuestoVentas>
+      <MontoNeto>2500.00</MontoNeto>
+    </LineaDetalle>
   </DetalleServicio>
   <ResumenFactura>
     <CodigoMoneda>CRC</CodigoMoneda>
-    <TotalServGravados>13000.00</TotalServGravados>
+    <TotalServGravados>10500.00</TotalServGravados>
     <TotalServExentos>0.00</TotalServExentos>
-    <TotalImpuestoVentas>1690.00</TotalImpuestoVentas>
+    <TotalImpuestoVentas>1365.00</TotalImpuestoVentas>
     <TotalImpuestoSelectivo>0.00</TotalImpuestoSelectivo>
-    <TotalComprobante>14690.00</TotalComprobante>
+    <TotalComprobante>11865.00</TotalComprobante>
   </ResumenFactura>
   <CodigoSeguridad></CodigoSeguridad>
 </FacturaElectronicaV4_4>
