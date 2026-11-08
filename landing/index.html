@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUPE — Punto de venta simple para tu negocio</title>
+<meta name="description" content="HUPE es un punto de venta simple que corre en tu local: ventas, SINPE Móvil, inventario, cierre de caja y funciona sin internet. Pronto con IA.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23fff'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%23000' stroke-width='3.2' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#000;
+  --panel:#0a0a0a;
+  --line:#1c1c1c;
+  --line-strong:#2c2c2c;
+  --text:#fff;
+  --muted:#8f8f8f;
+  --dim:#5c5c5c;
+  --blue:#2f7bff;
+  --green:#1fc77a;
+  --amber:#ffb224;
+  --violet:#9b6bff;
+  --red:#ff5a4e;
+  --radius:14px;
+  --max:1200px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--text);font-family:"Onest",system-ui,sans-serif;font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+img,svg{display:block}
+:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:6px}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 32px}
+
+/* NAV */
+.nav{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.nav .wrap{display:flex;align-items:center;height:64px;gap:36px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;letter-spacing:-.02em}
+.brand svg{width:24px;height:24px}
+.nav-links{display:flex;gap:26px;font-size:15px;color:#cfcfcf}
+.nav-links a:hover{color:#fff}
+.nav-cta{margin-left:auto;display:flex;gap:10px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:34px;padding:0 14px;border-radius:9px;font-size:14px;font-weight:500;white-space:nowrap;transition:background .15s}
+.btn-light{background:#fff;color:#000}
+.btn-light:hover{background:#e6e6e6}
+.btn-ghost{color:#cfcfcf}
+.btn-ghost:hover{color:#fff}
+.btn-lg{height:44px;padding:0 20px;font-size:15px;border-radius:11px}
+.btn-dark{background:#1a1a1a;color:#fff}
+.btn-dark:hover{background:#252525}
+
+/* HERO */
+.hero{padding-top:96px;padding-bottom:56px}
+.hero h1{font-size:clamp(40px,6.2vw,72px);line-height:1.02;letter-spacing:-.045em;font-weight:500;max-width:15ch}
+.hero p.lede{margin-top:24px;font-size:clamp(17px,1.6vw,20px);color:var(--muted);max-width:56ch;line-height:1.5}
+.hero-actions{margin-top:36px;display:flex;gap:12px;flex-wrap:wrap}
+
+/* APP MOCKUP — recreación del estilo real de HUPE */
+.shot{margin-top:64px;border:1px solid var(--line-strong);border-radius:16px;background:#0d0d0d;overflow:hidden;box-shadow:0 40px 120px -40px rgba(126,169,242,.45)}
+.shot-bar{display:flex;align-items:center;gap:7px;height:38px;padding:0 14px;border-bottom:1px solid var(--line);background:#111}
+.shot-bar i{width:10px;height:10px;border-radius:50%;background:#2a2a2a}
+.shot-bar span{margin-left:12px;font-size:12px;color:var(--dim)}
+.screen{position:relative;width:100%;aspect-ratio:1100/620;overflow:hidden;background:#f5f1ea}
+.ui{position:absolute;top:0;left:0;width:1100px;height:620px;transform-origin:0 0;transform:scale(var(--s,.5));background:#f5f1ea;color:#16161a;font-size:14px;line-height:1.4;padding:14px 16px 16px;display:flex;flex-direction:column;gap:16px}
+.ui-top{position:relative;display:flex;align-items:center;height:84px;flex:none}
+.ui-top::before{content:"";position:absolute;left:236px;right:0;top:0;bottom:0;border-radius:22px;background:linear-gradient(100deg,#7ea9f2,#b3cefb 55%,#8db4f4)}
+.ui-brand{position:relative;width:236px;padding-left:4px}
+.ui-brand small{display:block;font-size:10.5px}
+.ui-brand b{display:flex;align-items:center;gap:8px;font-size:24px;font-weight:600;letter-spacing:-.02em}
+.ui-logo{width:28px;height:28px;border-radius:50%;background:#16161a;position:relative;flex:none}
+.ui-logo::after{content:"";position:absolute;width:10px;height:10px;border-radius:50%;background:#f5f1ea;right:6px;top:9px}
+.ui-nav{position:relative;margin-left:22px;background:#f3f1ec;border-radius:999px;padding:6px;display:flex;gap:2px}
+.ui-nav span{padding:9px 16px;border-radius:999px;transition:background .3s,color .3s}
+.ui-nav span.on{background:#16161a;color:#fff}
+.ui-tools{position:relative;margin-left:auto;margin-right:14px;display:flex;gap:10px;align-items:center}
+.ui-tools i{width:36px;height:36px;border-radius:50%;background:#f3f1ec}
+.ui-out{background:#16161a;color:#fff;border-radius:999px;padding:10px 18px;font-size:12.5px}
+.ui-body{flex:1;position:relative;min-height:0}
+.scene{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .45s,visibility .45s}
+.ui[data-scene=venta] .s-venta,.ui[data-scene=prod] .s-prod,.ui[data-scene=cierre] .s-cierre{opacity:1;visibility:visible}
+.uc{background:#fffdf8;border:1px solid #efe7d8;border-radius:22px;padding:22px 24px}
+.uh{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:600}
+.uh svg{width:18px;height:18px}
+.s-venta{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
+.s-venta > .uc:first-child{height:100%}
+.uin{margin-top:16px;border:1px solid #eadfca;border-radius:999px;padding:12px 18px;color:#8a857b;min-height:46px}
+.uin .q-text{color:#16161a}
+.uin .q-text:not(:empty)::after{content:"";display:inline-block;width:1.5px;height:16px;background:#16161a;margin-left:2px;vertical-align:-3px;animation:caret 1s steps(1) infinite}
+@keyframes caret{50%{opacity:0}}
+.ur{display:flex;align-items:center;gap:14px;padding:12px 6px;border-bottom:1px solid #f1eadd}
+.ur .code{font-size:12px;color:#8a857b;width:120px}
+.ur .pp{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums}
+.ur .pp small{display:block;font-size:11.5px;color:#8a857b}
+.ur .add{width:30px;height:30px;border-radius:50%;background:#16161a;color:#fff;display:grid;place-items:center;font-size:17px}
+.ucart{display:flex;flex-direction:column}
+.ucart .uh{padding-bottom:14px;border-bottom:1px solid #ebe3d3}
+.empty{color:#8a857b;text-align:center;padding:56px 0}
+.ci{display:flex;justify-content:space-between;gap:8px;padding:11px 0;border-bottom:1px solid #f1eadd;font-variant-numeric:tabular-nums}
+.ci small{display:block;color:#8a857b;font-size:12px}
+.sum{display:flex;justify-content:space-between;padding-top:12px;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.pay{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px}
+.pay span{border:1px solid #e6dcc8;border-radius:999px;padding:8px 0;text-align:center;font-size:12.5px;transition:all .3s}
+.pay span.sel{background:#16161a;border-color:#16161a;color:#fff}
+.cobrar{margin-top:12px;background:#16161a;color:#fff;font-weight:600;border-radius:999px;padding:13px;text-align:center;transition:transform .15s,background .3s}
+.cobrar.press{transform:scale(.96);background:#1fa463}
+.toast{position:absolute;left:50%;bottom:10px;transform:translate(-50%,10px);background:#16161a;color:#fff;border-radius:999px;padding:12px 20px;display:flex;align-items:center;gap:10px;opacity:0;transition:opacity .35s,transform .35s;white-space:nowrap}
+.toast.in{opacity:1;transform:translate(-50%,0)}
+.toast i{width:20px;height:20px;border-radius:50%;background:#1fc77a;display:grid;place-items:center;font-style:normal;font-size:12px;color:#05331d}
+.ui [data-at]:not(.in){display:none}
+.ui [data-at].in{animation:pop .35s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.s-prod .uc{height:100%}
+.ph{display:flex;align-items:center;gap:10px}
+.ph .f{margin-left:auto;border:1px solid #eadfca;border-radius:999px;padding:7px 14px;color:#8a857b;font-size:12.5px;width:200px}
+.ph .b{background:#16161a;color:#fff;border-radius:999px;padding:8px 18px;font-size:12.5px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 10px}
+.stats div{background:#e3edfd;border-radius:14px;padding:12px 16px;font-size:11.5px;color:#4b5563}
+.stats div:last-child{background:#a9c8fa}
+.stats b{display:block;font-size:20px;color:#16161a;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.tbl th{text-align:left;font-weight:500;color:#4b4b4b;padding:9px 10px;border-bottom:1px solid #ebe3d3}
+.tbl td{padding:9px 10px;border-bottom:1px solid #f1eadd}
+.tbl .r{text-align:right}
+.tbl .neg{color:#e5484d}
+.s-cierre{display:grid;place-items:start center}
+.s-cierre .uc{width:500px;padding:22px 26px}
+.kv{display:flex;justify-content:space-between;padding:6px 0;font-variant-numeric:tabular-nums}
+.kv-h{font-size:12.5px;font-weight:600;color:#6b6b6b;padding:12px 0 2px;border-top:1px solid #efe6d4;margin-top:6px}
+.kv.big{border-top:1px solid #efe6d4;margin-top:8px;padding-top:12px;font-size:19px;font-weight:700}
+
+/* VIDEO + ICONOS (estilo Framer) */
+.duo{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:56px}
+.duo > div{display:flex;flex-direction:column;min-width:0}
+.duo > div + div{border-left:1px solid var(--line)}
+.duo-media{position:relative;border-bottom:1px solid var(--line);aspect-ratio:1100/620;background:#000}
+.duo-body{padding:26px 30px 30px}
+.duo-body h3{font-size:18px;font-weight:500;letter-spacing:-.015em}
+.duo-body p{color:var(--muted);margin-top:4px;max-width:46ch}
+.play{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.18);border:0;cursor:pointer}
+.play span{width:64px;height:64px;border-radius:50%;background:rgba(10,10,10,.82);display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.play svg{width:22px;height:22px;margin-left:3px}
+.play[hidden]{display:none}
+.ctrl{display:flex;gap:10px;align-items:center;margin-top:18px}
+.ctrl .tab{flex:1;background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-align:left;cursor:pointer;padding:0}
+.ctrl .tab[aria-current=true]{color:#fff}
+.ctrl .bar{display:block;height:3px;border-radius:2px;background:#262626;margin-bottom:8px;overflow:hidden}
+.ctrl .fill{display:block;height:100%;width:0;background:#fff}
+.ctrl .pp-btn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);background:none;color:#fff;display:grid;place-items:center;cursor:pointer;flex:none}
+.ctrl .pp-btn svg{width:14px;height:14px}
+.icons{display:grid;grid-template-columns:repeat(3,auto);gap:16px;place-content:center;height:100%}
+.icons span{width:76px;height:76px;border-radius:19px;display:grid;place-items:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 10px 24px rgba(0,0,0,.5)}
+.icons svg{width:36px;height:36px}
+/* MODULE GRID (Framer-style client grid) */
+.grid{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-left:1px solid var(--line);margin-top:24px}
+.cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:28px 24px 26px;min-height:168px;display:flex;flex-direction:column;position:relative;transition:background .2s}
+.cell:hover{background:var(--panel)}
+.ico{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;margin-bottom:auto}
+.ico svg{width:22px;height:22px}
+.cell h3{font-size:15px;font-weight:500;color:var(--muted);margin-top:28px;letter-spacing:-.005em}
+.cell p{font-size:15px;font-weight:500;color:#fff;margin-top:2px;line-height:1.35}
+.cell .tag{position:absolute;top:24px;right:20px;font-size:12px;color:#000;background:#fff;padding:3px 8px;border-radius:999px;font-weight:500}
+.cell.ai .tag{background:var(--violet);color:#fff}
+.grid-foot{margin-top:28px;color:var(--muted);font-size:15px;max-width:62ch}
+.grid-foot strong{color:#fff;font-weight:500}
+
+/* SECTIONS */
+section{padding:112px 0 0}
+.sec-head h2{font-size:clamp(32px,4.4vw,52px);letter-spacing:-.04em;line-height:1.05;font-weight:500;max-width:18ch}
+.sec-head p{margin-top:18px;color:var(--muted);font-size:18px;max-width:58ch}
+
+/* AI */
+.ai-intro{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:end}
+.soon{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:#d9ccff;background:rgba(155,107,255,.12);border:1px solid rgba(155,107,255,.35);padding:6px 12px;border-radius:999px;margin-bottom:26px}
+.soon i{width:7px;height:7px;border-radius:50%;background:var(--violet);box-shadow:0 0 0 4px rgba(155,107,255,.25)}
+.ai-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:56px}
+.ai-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.ai-visual{height:290px;border-bottom:1px solid var(--line);padding:22px;position:relative;overflow:hidden;background:radial-gradient(120% 90% at 50% 0%,#141414 0%,#0a0a0a 70%)}
+.ai-body{padding:24px 24px 28px}
+.ai-body h3{font-size:20px;font-weight:500;letter-spacing:-.02em}
+.ai-body p{margin-top:8px;color:var(--muted);font-size:15px}
+
+/* AI visual: invoice scan */
+.invoice{background:#f4f4f2;color:#111;border-radius:8px;width:72%;padding:14px 14px 10px;font-size:10.5px;line-height:1.5;transform:rotate(-3deg);box-shadow:0 18px 40px rgba(0,0,0,.55)}
+.invoice b{font-weight:600;font-size:11.5px;display:block;margin-bottom:6px}
+.invoice .row{display:flex;justify-content:space-between;border-top:1px dashed #c9c9c4;padding:3px 0}
+.scanline{position:absolute;left:18px;right:18px;height:2px;background:var(--violet);box-shadow:0 0 18px 4px rgba(155,107,255,.55);top:30%;animation:scan 3.2s ease-in-out infinite alternate}
+@keyframes scan{from{top:20%}to{top:66%}}
+.extracted{position:absolute;right:16px;bottom:18px;background:#121212;border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;font-size:12px;width:56%}
+.extracted div{display:flex;justify-content:space-between;gap:8px;padding:2px 0;color:var(--muted)}
+.extracted div span:last-child{color:#fff}
+.extracted .ok{color:var(--green)!important}
+
+/* AI visual: chat */
+.chat{display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.4}
+.bubble{padding:10px 13px;border-radius:14px;max-width:86%}
+.me{align-self:flex-end;background:var(--blue);border-bottom-right-radius:4px}
+.bot{align-self:flex-start;background:#1a1a1a;border:1px solid var(--line-strong);border-bottom-left-radius:4px;color:#e9e9e9}
+.bot strong{color:#fff;font-weight:600}
+.mini-bars{display:flex;align-items:flex-end;gap:5px;height:34px;margin-top:8px}
+.mini-bars span{flex:1;background:#3a3a3a;border-radius:3px}
+.mini-bars span.hi{background:var(--violet)}
+
+/* AI visual: forecast */
+.fc-head{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.fc-head b{color:#fff;font-weight:500}
+.fc-chart{position:absolute;left:22px;right:22px;bottom:62px;top:62px}
+.fc-chart svg{width:100%;height:100%}
+.fc-alert{position:absolute;left:22px;right:22px;bottom:18px;display:flex;align-items:center;gap:10px;background:rgba(255,178,36,.1);border:1px solid rgba(255,178,36,.35);color:#ffd896;border-radius:10px;padding:8px 12px;font-size:13px}
+.fc-alert i{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
+
+/* SPLIT */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:56px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:36px;display:flex;flex-direction:column;min-height:420px}
+.panel h3{font-size:24px;font-weight:500;letter-spacing:-.025em}
+.panel > p{color:var(--muted);margin-top:10px;max-width:46ch}
+.panel .viz{margin-top:auto;padding-top:32px}
+
+.status-list{display:flex;flex-direction:column;gap:8px}
+.status{display:flex;align-items:center;gap:12px;background:#111;border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14px}
+.status .dot{width:8px;height:8px;border-radius:50%}
+.status .k{color:var(--muted);margin-left:auto;font-size:13px}
+
+.receipt{font-size:13px;background:#111;border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;grid-template-columns:auto 1fr;gap:6px 18px}
+.receipt dt{color:var(--muted)}
+.receipt dd{text-align:right;font-variant-numeric:tabular-nums}
+.receipt .total{border-top:1px solid var(--line-strong);padding-top:10px;margin-top:4px;font-size:15px;color:#fff;font-weight:500}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--green);background:rgba(31,199,122,.1);border:1px solid rgba(31,199,122,.3);border-radius:999px;padding:3px 9px;width:fit-content;justify-self:end}
+
+/* FLOW (real sequence of a sale) */
+.flow{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);border-left:1px solid var(--line);margin-top:56px}
+.step{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:26px 22px 30px}
+.step .n{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+.step h3{margin-top:40px;font-size:17px;font-weight:500;letter-spacing:-.015em}
+.step p{margin-top:6px;color:var(--muted);font-size:14.5px}
+
+/* FAQ */
+.faq{display:grid;grid-template-columns:1fr 1.6fr;gap:48px}
+.faq-list{border-top:1px solid var(--line)}
+details{border-bottom:1px solid var(--line)}
+summary{list-style:none;cursor:pointer;padding:22px 40px 22px 0;font-size:17px;font-weight:500;position:relative;letter-spacing:-.01em}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";position:absolute;right:6px;top:50%;width:12px;height:12px;margin-top:-8px;border-right:1.6px solid #888;border-bottom:1.6px solid #888;transform:rotate(45deg);transition:transform .2s}
+details[open] summary::after{transform:rotate(225deg);margin-top:-2px}
+details p{color:var(--muted);padding:0 40px 24px 0;max-width:64ch}
+
+/* CTA */
+.cta{margin-top:112px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:96px 0;text-align:left}
+.cta h2{font-size:clamp(36px,5.4vw,64px);letter-spacing:-.045em;line-height:1.02;font-weight:500;max-width:16ch}
+.cta p{margin-top:18px;color:var(--muted);font-size:18px;max-width:52ch}
+.cta .hero-actions{margin-top:32px}
+
+/* FOOTER */
+footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
+.foot{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:32px}
+.foot h4{color:#fff;font-weight:500;font-size:14px;margin-bottom:14px}
+.foot ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.foot a:hover{color:#fff}
+.foot .brand{color:#fff;margin-bottom:14px}
+.legal{margin-top:56px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--dim);font-size:13px}
+
+/* RESPONSIVE */
+@media (max-width:1000px){
+  .grid{grid-template-columns:repeat(3,1fr)}
+  .ai-cards{grid-template-columns:1fr}
+  .ai-visual{height:280px}
+  .ai-intro,.faq{grid-template-columns:1fr;gap:24px}
+  .duo{grid-template-columns:1fr}
+  .duo > div + div{border-left:0;border-top:1px solid var(--line)}
+  .flow{grid-template-columns:repeat(2,1fr)}
+  .foot{grid-template-columns:1fr 1fr}
+}
+@media (max-width:760px){
+  .wrap{padding:0 16px}
+  .nav-links,.nav .btn-ghost{display:none}
+  .hero{padding-top:64px;padding-bottom:40px}
+  .grid{grid-template-columns:repeat(2,1fr)}
+  .cell{padding:20px 16px;min-height:150px}
+  .cell .tag{top:18px;right:12px}
+  .split{grid-template-columns:1fr}
+  .panel{padding:24px;min-height:0}
+  section{padding-top:80px}
+  .flow{grid-template-columns:1fr}
+  .step h3{margin-top:14px}
+  .cta{padding:72px 0;margin-top:80px}
+  .invoice{width:82%}
+  .shot{margin-top:44px}
+  .duo-body{padding:22px 20px 24px}
+  .icons{gap:12px}
+  .icons span{width:56px;height:56px;border-radius:14px}
+  .icons svg{width:26px;height:26px}
+  .ctrl .tab{font-size:12px}
+  .extracted{width:64%}
+}
+@media (prefers-reduced-motion:reduce){
+  .scanline{animation:none;top:46%}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a href="#" class="brand" aria-label="HUPE, inicio">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#fff"/><path d="M10 8v16M22 8v16M10 16h12" stroke="#000" stroke-width="3.2" fill="none" stroke-linejoin="round"/></svg>
+      HUPE
+    </a>
+    <nav class="nav-links" aria-label="Principal">
+      <a href="#modulos">Módulos</a>
+      <a href="#ia">Inteligencia artificial</a>
+      <a href="#local">Local y offline</a>
+      <a href="#preguntas">Preguntas</a>
+    </nav>
+    <div class="nav-cta">
+      <a href="#contacto" class="btn btn-ghost">Contacto</a>
+      <a href="#contacto" class="btn btn-light">Pedir una demo</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- HERO -->
+  <div class="wrap hero" id="inicio">
+    <h1>El punto de venta simple que entiende tu negocio</h1>
+    <p class="lede">HUPE corre en la computadora de tu local: vende, cobra con SINPE Móvil, imprime el tiquete y lleva tu inventario aunque se caiga el internet. Sin trámites ni configuraciones complicadas. Pronto, con inteligencia artificial que lee facturas de proveedores y predice qué se te va a acabar.</p>
+    <div class="hero-actions">
+      <a href="#contacto" class="btn btn-light btn-lg">Pedir una demo</a>
+      <a href="#ia" class="btn btn-dark btn-lg">Ver lo que viene con IA</a>
+    </div>
+
+    <figure class="shot" role="img" aria-label="Pantalla de venta de HUPE: búsqueda de productos, carrito con total y cobro por SINPE Móvil">
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>HUPE · Punto de venta</span></div>
+      <div class="screen" id="hero-screen" aria-hidden="true"></div>
+    </figure>
+  </div>
+
+  <!-- MODULE GRID -->
+  <div class="wrap" id="modulos">
+    <div class="grid">
+      <div class="cell">
+        <div class="ico" style="background:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg></div>
+        <h3>Punto de venta</h3><p>Carrito, descuentos y cobro en segundos</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></div>
+        <h3>Tiquete de venta</h3><p>Imprime o comparte el recibo al cliente</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></div>
+        <h3>Medios de pago</h3><p>Efectivo, SINPE Móvil y tarjeta</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:var(--amber)"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg></div>
+        <h3>Inventario</h3><p>Stock en tiempo real con cada venta</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:#1a1a1a;border:1px solid var(--line-strong)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 8v8M11 8v8M14 8v8M17 8v8"/></svg></div>
+        <h3>Catálogo de productos</h3><p>Precios, categorías y código de barras</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+        <h3>Cierre de caja</h3><p>Ventas del día y flujo de efectivo</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></div>
+        <h3>Devoluciones</h3><p>Reversa una venta y el stock vuelve solo</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
+        <h3>Reportes</h3><p>Ventas por día, producto y cajero</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20M8.5 16.4a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.7M19 12.9a10 10 0 0 0-2-1.5M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.7 5M12 20h.01"/></svg></div>
+        <h3>Modo offline</h3><p>Vende sin internet, sincroniza al volver</p>
+      </div>
+      <div class="cell">
+        <div class="ico" style="background:#1a1a1a;border:1px solid var(--line-strong)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.5A6.5 6.5 0 0 1 21.5 20"/></svg></div>
+        <h3>Usuarios y permisos</h3><p>Cajeros con acceso seguro y auditoría</p>
+      </div>
+      <div class="cell ai">
+        <span class="tag">IA</span>
+        <div class="ico" style="background:var(--violet)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M4 12h16"/></svg></div>
+        <h3>Lector de facturas</h3><p>Carga compras de proveedores con una foto</p>
+      </div>
+      <div class="cell ai">
+        <span class="tag">IA</span>
+        <div class="ico" style="background:var(--violet)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h.01M12 11h.01M15 11h.01"/></svg></div>
+        <h3>Asistente del negocio</h3><p>Pregunta por tus ventas en palabras normales</p>
+      </div>
+    </div>
+    <p class="grid-foot"><strong>Simple a propósito.</strong> HUPE hace lo que un comercio necesita todos los días —vender, cobrar, controlar el inventario y cerrar caja— sin facturación electrónica ni envíos a Hacienda que compliquen la operación.</p>
+  </div>
+
+  <!-- DEMO -->
+  <section id="demo">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Así se ve HUPE por dentro</h2>
+        <p>Pantallas limpias y botones grandes: tu equipo aprende a vender en una tarde.</p>
+      </div>
+      <div class="duo">
+        <div>
+          <div class="duo-media">
+            <div class="screen" id="demo-screen" role="img" aria-label="Demostración animada: búsqueda de arroz, carrito, cobro por SINPE Móvil, inventario y cierre de caja"></div>
+            <button class="play" id="demo-play" aria-label="Reproducir demostración"><span><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 4.5v15l12.5-7.5z"/></svg></span></button>
+          </div>
+          <div class="duo-body">
+            <h3>Mira una venta completa</h3>
+            <p>Busca un producto, cóbralo por SINPE Móvil, revisa el inventario y cierra la caja del día.</p>
+            <div class="ctrl" id="demo-ctrl">
+              <button class="tab" data-i="0" aria-current="true"><span class="bar"><span class="fill"></span></span>Vender</button>
+              <button class="tab" data-i="1"><span class="bar"><span class="fill"></span></span>Inventario</button>
+              <button class="tab" data-i="2"><span class="bar"><span class="fill"></span></span>Cierre de caja</button>
+              <button class="pp-btn" id="demo-pp" aria-label="Reproducir demostración"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12.5-7.5z"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="duo-media">
+            <div class="icons" aria-hidden="true">
+              <span style="background:linear-gradient(160deg,#4d8dff,#1f5fe0)" title="Lector de código de barras"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M4 7V5h3M17 5h3v2M20 17v2h-3M7 19H4v-2M8 8v8M11 8v8M14 8v8M17 8v8"/></svg></span>
+              <span style="background:linear-gradient(160deg,#2b2b2b,#111)" title="Impresora térmica"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></span>
+              <span style="background:linear-gradient(160deg,#36dc91,#14a463)" title="SINPE Móvil"><svg viewBox="0 0 24 24" fill="none" stroke="#04331c" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2M9.5 10.5l2 2 3.5-4"/></svg></span>
+              <span style="background:linear-gradient(160deg,#f1f1f1,#cfcfcf)" title="Tarjeta"><svg viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.8"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6 15h4"/></svg></span>
+              <span style="background:linear-gradient(160deg,#fff,#e8e8e8)" title="HUPE"><svg viewBox="0 0 32 32"><path d="M10 7v18M22 7v18M10 16h12" stroke="#000" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></span>
+              <span style="background:linear-gradient(160deg,#ffc44d,#f29d0c)" title="Efectivo"><svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="1.8"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/></svg></span>
+              <span style="background:linear-gradient(160deg,#2b2b2b,#111)" title="Atajos de teclado"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="2.5" y="6" width="19" height="12" rx="2"/><text x="12" y="14.6" text-anchor="middle" font-size="6.5" font-family="Onest,sans-serif" fill="#fff" stroke="none" font-weight="600">F2</text></svg></span>
+              <span style="background:linear-gradient(160deg,#a986ff,#6d3ff0)" title="Asistente con IA"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2.5l1.8 5.2 5.2 1.8-5.2 1.8L12 16.5l-1.8-5.2L5 9.5l5.2-1.8zM18.5 15l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg></span>
+              <span style="background:linear-gradient(160deg,#4fa3ff,#1767c9)" title="Windows"><svg viewBox="0 0 24 24" fill="#fff"><path d="M3 5.5 10.5 4.4V11.5H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7.1L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg></span>
+            </div>
+          </div>
+          <div class="duo-body">
+            <h3>Funciona con lo que ya tienes</h3>
+            <p>Una computadora con Windows, lector de código de barras e impresora térmica. Cobra en efectivo, SINPE Móvil o tarjeta.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- AI -->
+  <section id="ia">
+    <div class="wrap">
+      <div class="ai-intro sec-head">
+        <div>
+          <span class="soon"><i></i>Próximamente en HUPE</span>
+          <h2>Inteligencia artificial que trabaja dentro de tu caja</h2>
+        </div>
+        <p>La IA usa los datos que tu POS ya tiene —ventas, productos, compras— para ahorrarte las tareas que hoy haces a mano. Tus datos siguen siendo tuyos y se procesan solo cuando tú lo pides.</p>
+      </div>
+
+      <div class="ai-cards">
+        <!-- Invoice reader -->
+        <article class="ai-card">
+          <div class="ai-visual" aria-hidden="true">
+            <div class="invoice">
+              <b>Distribuidora del Valle S.A.</b>
+              <div class="row"><span>Arroz 1,8 kg × 24</span><span>₡38 400</span></div>
+              <div class="row"><span>Frijol negro 900 g × 12</span><span>₡16 200</span></div>
+              <div class="row"><span>Aceite 1 L × 18</span><span>₡25 920</span></div>
+              <div class="row"><span>Azúcar 2 kg × 10</span><span>₡14 500</span></div>
+              <div class="row"><span><strong>Total</strong></span><span><strong>₡95 020</strong></span></div>
+            </div>
+            <div class="scanline"></div>
+            <div class="extracted">
+              <div><span>Proveedor</span><span>Dist. del Valle</span></div>
+              <div><span>Líneas</span><span>4 productos</span></div>
+              <div><span>Inventario</span><span class="ok">+64 unidades</span></div>
+            </div>
+          </div>
+          <div class="ai-body">
+            <h3>Lee las facturas de tus proveedores</h3>
+            <p>Toma una foto o sube el PDF de la compra. La IA reconoce cada producto, lo empata con tu catálogo y suma las cantidades al inventario. Tú solo revisas y confirmas.</p>
+          </div>
+        </article>
+
+        <!-- Assistant -->
+        <article class="ai-card">
+          <div class="ai-visual" aria-hidden="true">
+            <div class="chat">
+              <div class="bubble me">¿Qué vendí más esta semana y cuánto gané?</div>
+              <div class="bubble bot">
+                Lo más vendido fue <strong>Arroz 1,8 kg</strong> con 142 unidades. La utilidad de la semana fue <strong>₡412 300</strong>, 8 % más que la anterior.
+                <div class="mini-bars"><span style="height:40%"></span><span style="height:55%"></span><span style="height:48%"></span><span style="height:70%"></span><span style="height:62%"></span><span class="hi" style="height:100%"></span><span style="height:58%"></span></div>
+              </div>
+              <div class="bubble me">¿A qué hora conviene abrir la otra caja?</div>
+            </div>
+          </div>
+          <div class="ai-body">
+            <h3>Responde preguntas sobre tu negocio</h3>
+            <p>Pregunta como le preguntarías a tu contador: qué se vende más, en qué horario, cuánto entró por SINPE o qué cliente compra más. Respuestas con números reales de tu caja, sin armar reportes.</p>
+          </div>
+        </article>
+
+        <!-- Forecast -->
+        <article class="ai-card">
+          <div class="ai-visual" aria-hidden="true">
+            <div class="fc-head"><span>Aceite 1 L · stock proyectado</span><b>18 u.</b></div>
+            <div class="fc-chart">
+              <svg viewBox="0 0 300 120" preserveAspectRatio="none">
+                <line x1="0" y1="96" x2="300" y2="96" stroke="#ff5a4e" stroke-dasharray="4 5" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+                <path d="M0 18 L30 26 L60 30 L90 42 L120 46 L150 58" fill="none" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                <path d="M150 58 L180 70 L210 80 L240 96 L270 108 L300 116" fill="none" stroke="#9b6bff" stroke-width="2" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>
+                <circle cx="240" cy="96" r="4" fill="#ffb224"/>
+              </svg>
+            </div>
+            <div class="fc-alert"><i></i>Se agota el jueves. Sugerido: pedir 36 unidades.</div>
+          </div>
+          <div class="ai-body">
+            <h3>Predice tu inventario sin contarlo</h3>
+            <p>Con el historial de ventas, la temporada y los días de entrega de cada proveedor, la IA estima cuándo se te acaba cada producto y cuánto pedir. Menos conteos a mano y menos estantes vacíos.</p>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOCAL -->
+  <section id="local">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Instalado en tu local, no depende de la nube</h2>
+        <p>HUPE vive en la computadora de tu negocio con su propia base de datos. No necesita internet para vender, cobrar ni cerrar caja: si se va la conexión, el local sigue funcionando igual.</p>
+      </div>
+      <div class="split">
+        <div class="panel">
+          <h3>Sigue vendiendo sin conexión</h3>
+          <p>Cada venta queda guardada en tu equipo al instante. Nada se pierde por un corte de internet.</p>
+          <div class="viz status-list" aria-hidden="true">
+            <div class="status"><span class="dot" style="background:var(--amber)"></span>Sin internet desde las 14:02<span class="k">14:02</span></div>
+            <div class="status"><span class="dot" style="background:var(--green)"></span>12 ventas registradas sin conexión<span class="k">14:19</span></div>
+            <div class="status"><span class="dot" style="background:var(--green)"></span>Inventario y caja al día<span class="k">14:19</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Tiquetes claros para tus clientes</h3>
+          <p>Cada venta genera un tiquete con número consecutivo, detalle de productos y forma de pago, listo para imprimir en tu impresora térmica.</p>
+          <dl class="viz receipt" aria-hidden="true">
+            <dt>Tiquete</dt><dd>N.º 004127</dd>
+            <dt>Subtotal</dt><dd>₡17 699</dd>
+            <dt>IVA 13 %</dt><dd>₡2 301</dd>
+            <dt>Pago</dt><dd>SINPE Móvil</dd>
+            <dt class="total">Total</dt><dd class="total">₡20 000</dd>
+            <dt></dt><dd><span class="chip">● Pagado</span></dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW -->
+  <section>
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Una venta, de principio a fin</h2>
+        <p>El mismo flujo para un minisúper, una ferretería o una soda.</p>
+      </div>
+      <div class="flow">
+        <div class="step"><span class="n">1</span><h3>Busca o escanea</h3><p>Por nombre o con lector de código de barras.</p></div>
+        <div class="step"><span class="n">2</span><h3>Arma el carrito</h3><p>Cantidades y descuentos con el total al día.</p></div>
+        <div class="step"><span class="n">3</span><h3>Cobra</h3><p>Efectivo con vuelto, SINPE Móvil o tarjeta.</p></div>
+        <div class="step"><span class="n">4</span><h3>Entrega el tiquete</h3><p>Se imprime y el inventario se descuenta solo.</p></div>
+        <div class="step"><span class="n">5</span><h3>Cierra la caja</h3><p>Resumen del día y efectivo esperado.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="preguntas">
+    <div class="wrap faq">
+      <div class="sec-head"><h2>Preguntas frecuentes</h2></div>
+      <div class="faq-list">
+        <details>
+          <summary>¿Necesito internet para usar el POS?</summary>
+          <p>No. HUPE y su base de datos están instalados en tu computadora, así que vendes, cobras y cierras caja sin conexión. El internet solo hará falta para las funciones de IA cuando estén disponibles.</p>
+        </details>
+        <details>
+          <summary>¿HUPE emite facturas electrónicas para Hacienda?</summary>
+          <p>No. HUPE es un punto de venta simplificado: registra ventas, imprime tiquetes y controla tu inventario, pero no genera ni envía comprobantes XML a Hacienda. Es ideal si tu negocio no necesita facturación electrónica desde la caja.</p>
+        </details>
+        <details>
+          <summary>¿Qué necesito para instalarlo?</summary>
+          <p>Una computadora con Windows. Opcionalmente, lector de código de barras e impresora térmica para los tiquetes. Nosotros hacemos la instalación y cargamos tu catálogo inicial.</p>
+        </details>
+        <details>
+          <summary>¿Cuándo llegan las funciones de inteligencia artificial?</summary>
+          <p>Están en desarrollo. El lector de facturas de proveedores, el asistente de preguntas y la predicción de inventario se irán habilitando como actualizaciones del mismo sistema, sin reinstalar nada.</p>
+        </details>
+        <details>
+          <summary>¿La IA puede ver mis datos sin permiso?</summary>
+          <p>No. Tu información vive en tu equipo. Las funciones de IA procesan solo lo necesario para responder lo que pediste —una factura, una pregunta, una proyección— y nada se usa para entrenar modelos de terceros.</p>
+        </details>
+        <details>
+          <summary>¿Puedo tener varios cajeros?</summary>
+          <p>Sí. Cada cajero entra con su propio usuario y contraseña, y el sistema registra quién hizo cada venta, devolución y cierre de caja.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta" id="contacto">
+    <div class="wrap">
+      <h2>Mira HUPE funcionando en tu negocio</h2>
+      <p>Agenda una demostración de 20 minutos. Te mostramos una venta completa, el control de inventario y lo que viene con IA.</p>
+      <div class="hero-actions">
+        <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20una%20demo%20de%20HUPE" class="btn btn-light btn-lg" target="_blank" rel="noopener">Escribir por WhatsApp</a>
+        <a href="mailto:ventas@hupe.cr?subject=Demo%20HUPE" class="btn btn-dark btn-lg">Enviar un correo</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <div class="brand">
+          <svg viewBox="0 0 32 32" aria-hidden="true" width="24" height="24"><rect width="32" height="32" rx="7" fill="#fff"/><path d="M10 8v16M22 8v16M10 16h12" stroke="#000" stroke-width="3.2" fill="none" stroke-linejoin="round"/></svg>
+          HUPE
+        </div>
+        <p style="max-width:34ch">Punto de venta simple y local para comercios de Costa Rica.</p>
+      </div>
+      <div>
+        <h4>Producto</h4>
+        <ul><li><a href="#modulos">Módulos</a></li><li><a href="#local">Modo offline</a></li><li><a href="#ia">Inteligencia artificial</a></li></ul>
+      </div>
+      <div>
+        <h4>Ayuda</h4>
+        <ul><li><a href="#preguntas">Preguntas frecuentes</a></li><li><a href="#contacto">Pedir una demo</a></li></ul>
+      </div>
+      <div>
+        <h4>Contacto</h4>
+        <ul><li><a href="mailto:ventas@hupe.cr">ventas@hupe.cr</a></li><li><a href="https://wa.me/50661037050" target="_blank" rel="noopener">WhatsApp</a></li><li>San José, Costa Rica</li></ul>
+      </div>
+    </div>
+    <div class="legal">
+      <span>© <span id="y">2026</span> HUPE</span>
+      <span>Hecho en Costa Rica</span>
+    </div>
+  </div>
+</footer>
+
+<template id="ui-tpl">
+  <div class="ui" data-scene="venta">
+    <div class="ui-top">
+      <div class="ui-brand"><small>HUPE</small><b><span class="ui-logo"></span>Punto de Venta</b></div>
+      <nav class="ui-nav"><span data-nav="venta" class="on">Inicio</span><span data-nav="prod">Productos</span><span>Reportes</span><span data-nav="cierre">Cierre de caja</span></nav>
+      <div class="ui-tools"><i></i><i></i><span class="ui-out">Cerrar sesión</span></div>
+    </div>
+    <div class="ui-body">
+      <div class="scene s-venta">
+        <div class="uc">
+          <div class="uh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Buscar productos</div>
+          <div class="uin"><span class="q-text"></span><span class="q-ph">Código de barras o nombre…  (F2)</span></div>
+          <div class="ur" data-at="2"><span class="code">7441001000123</span><span>Arroz Premium 1,8 kg</span><span class="pp">₡2 450<small>Stock: 86</small></span><span class="add">+</span></div>
+          <div class="ur" data-at="2"><span class="code">7441001000456</span><span>Arroz Integral 1 kg</span><span class="pp">₡1 980<small>Stock: 31</small></span><span class="add">+</span></div>
+          <div class="ur" data-at="2"><span class="code">7441001000789</span><span>Arroz con pollo 500 g</span><span class="pp">₡3 200<small>Stock: 12</small></span><span class="add">+</span></div>
+        </div>
+        <div class="uc ucart">
+          <div class="uh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>Carrito</div>
+          <div class="empty" data-until="3">Sin productos añadidos</div>
+          <div class="ci" data-at="3"><span>Arroz Premium 1,8 kg<small>2 × ₡2 450</small></span><span>₡4 900</span></div>
+          <div class="ci" data-at="4"><span>Frijol negro 900 g<small>1 × ₡1 350</small></span><span>₡1 350</span></div>
+          <div class="ci" data-at="5"><span>Café molido 500 g<small>1 × ₡3 750</small></span><span>₡3 750</span></div>
+          <div data-at="3">
+            <div class="sum"><span>Total</span><span class="t-total">₡4 900</span></div>
+            <div class="pay"><span>Efectivo</span><span class="p-sinpe">SINPE Móvil</span><span>Tarjeta</span></div>
+            <div class="cobrar">Cobrar</div>
+          </div>
+        </div>
+        <div class="toast"><i>✓</i>Venta registrada · ₡10 000 por SINPE Móvil</div>
+      </div>
+      <div class="scene s-prod">
+        <div class="uc">
+          <div class="ph"><div class="uh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>Productos e inventario</div><span class="f">Filtrar por nombre o código</span><span class="b">Actualizar</span></div>
+          <div class="stats"><div>Productos<b>1 248</b></div><div>Unidades en inventario<b>9 532</b></div><div>Valor del inventario<b>₡18 420 650</b></div></div>
+          <table class="tbl">
+            <thead><tr><th>Código</th><th>Producto</th><th class="r">Stock</th><th class="r">Precio con IVA</th><th class="r">Utilidad</th><th class="r">Total</th></tr></thead>
+            <tbody>
+              <tr><td>7441001000123</td><td>ARROZ PREMIUM 1,8KG</td><td class="r">84</td><td class="r">₡2 450</td><td class="r">22%</td><td class="r">₡205 800</td></tr>
+              <tr><td>7441002004410</td><td>FRIJOL NEGRO 900G</td><td class="r">40</td><td class="r">₡1 350</td><td class="r">25%</td><td class="r">₡54 000</td></tr>
+              <tr><td>7441003007781</td><td>CAFÉ MOLIDO 500G</td><td class="r">17</td><td class="r">₡3 750</td><td class="r">30%</td><td class="r">₡63 750</td></tr>
+              <tr><td>7441005001120</td><td>ACEITE VEGETAL 1L</td><td class="r neg">-2</td><td class="r">₡1 440</td><td class="r">20%</td><td class="r">₡0</td></tr>
+              <tr><td>7441006003354</td><td>PASTA DENTAL 75ML</td><td class="r">26</td><td class="r">₡1 180</td><td class="r">30%</td><td class="r">₡30 680</td></tr>
+              <tr><td>7441004009912</td><td>AZÚCAR 2KG</td><td class="r neg">0</td><td class="r">₡1 650</td><td class="r">18%</td><td class="r">₡0</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="scene s-cierre">
+        <div class="uc">
+          <div class="ph"><div class="uh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6"/></svg>Cierre de caja</div><span class="b" style="margin-left:auto">Actualizar</span></div>
+          <div class="kv" style="margin-top:10px"><span>Fecha</span><span>Hoy</span></div>
+          <div class="kv"><span>Cantidad de ventas</span><span>64</span></div>
+          <div class="kv-h">Por método de pago</div>
+          <div class="kv"><span>Efectivo</span><span>₡148 300</span></div>
+          <div class="kv"><span>SINPE Móvil</span><span>₡212 750</span></div>
+          <div class="kv"><span>Tarjeta</span><span>₡96 400</span></div>
+          <div class="kv-h">Totales</div>
+          <div class="kv"><span>Monto neto (sin IVA)</span><span>₡404 823</span></div>
+          <div class="kv"><span>IVA</span><span>₡52 627</span></div>
+          <div class="kv big"><span>TOTAL DEL DÍA</span><span>₡457 450</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+<script>
+document.getElementById('y').textContent=new Date().getFullYear();
+(function(){
+  var tpl=document.getElementById('ui-tpl');
+  var TOT=['₡0','₡0','₡0','₡4 900','₡6 250','₡10 000'];
+  var PLAY='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12.5-7.5z"/></svg>';
+  var PAUSE='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+  function mount(host){
+    var ui=tpl.content.firstElementChild.cloneNode(true);
+    host.appendChild(ui);
+    function fit(){ui.style.setProperty('--s',host.clientWidth/1100)}
+    fit();
+    if('ResizeObserver' in window){new ResizeObserver(fit).observe(host)}else{addEventListener('resize',fit)}
+    return ui;
+  }
+  function scene(ui,id){
+    ui.dataset.scene=id;
+    ui.querySelectorAll('[data-nav]').forEach(function(n){n.classList.toggle('on',n.dataset.nav===id)});
+  }
+  function step(ui,k){
+    ui.querySelectorAll('[data-at]').forEach(function(e){e.classList.toggle('in',k>=+e.dataset.at)});
+    ui.querySelectorAll('[data-until]').forEach(function(e){e.hidden=k>=+e.dataset.until});
+    ui.querySelector('.q-text').textContent=k>=2?'arroz':k===1?'arr':'';
+    ui.querySelector('.q-ph').hidden=k>=1;
+    ui.querySelector('.t-total').textContent=TOT[Math.min(k,5)];
+    ui.querySelector('.p-sinpe').classList.toggle('sel',k>=6);
+    ui.querySelector('.cobrar').classList.toggle('press',k===7);
+    ui.querySelector('.toast').classList.toggle('in',k>=8);
+  }
+
+  // Hero: captura fija con la venta armada
+  var hero=mount(document.getElementById('hero-screen'));
+  scene(hero,'venta');step(hero,6);
+
+  // Demo animado (tipo video)
+  var host=document.getElementById('demo-screen');
+  var ui=mount(host);
+  var SCENES=[
+    {id:'venta',dur:10000,steps:[[0,0],[900,1],[1500,2],[2700,3],[3600,4],[4500,5],[5900,6],[6900,7],[7300,8]]},
+    {id:'prod',dur:5500},
+    {id:'cierre',dur:5500}
+  ];
+  var tabs=[].slice.call(document.querySelectorAll('#demo-ctrl .tab'));
+  var fills=tabs.map(function(t){return t.querySelector('.fill')});
+  var playBtn=document.getElementById('demo-play'),pp=document.getElementById('demo-pp');
+  var i=0,t=0,last=0,playing=false,raf=0;
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function render(){
+    var s=SCENES[i];
+    scene(ui,s.id);
+    if(s.steps){var k=0;s.steps.forEach(function(p){if(t>=p[0])k=p[1]});step(ui,k)}
+    tabs.forEach(function(tb,j){tb.setAttribute('aria-current',j===i?'true':'false')});
+    fills.forEach(function(f,j){f.style.width=(j<i?100:j>i?0:Math.min(100,t/s.dur*100))+'%'});
+  }
+  function setIcon(){
+    pp.setAttribute('aria-label',playing?'Pausar demostración':'Reproducir demostración');
+    pp.innerHTML=playing?PAUSE:PLAY;
+  }
+  function loop(now){
+    if(!playing)return;
+    t+=now-last;last=now;
+    if(t>=SCENES[i].dur){t=0;i=(i+1)%SCENES.length}
+    render();raf=requestAnimationFrame(loop);
+  }
+  function play(){if(playing)return;playing=true;playBtn.hidden=true;last=performance.now();setIcon();raf=requestAnimationFrame(loop)}
+  function pause(){playing=false;cancelAnimationFrame(raf);playBtn.hidden=false;setIcon()}
+  playBtn.addEventListener('click',play);
+  pp.addEventListener('click',function(){playing?pause():play()});
+  tabs.forEach(function(tb,j){tb.addEventListener('click',function(){
+    i=j;t=0;render();
+    if(reduce){if(SCENES[i].steps)step(ui,6)}else{play()}
+  })});
+
+  render();setIcon();
+  if(reduce){step(ui,6)}
+  else if('IntersectionObserver' in window){
+    var auto=true;
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting&&auto){play()}
+      else if(!e.isIntersecting&&playing){pause()}
+    })},{threshold:.45}).observe(host);
+    pp.addEventListener('click',function(){auto=playing});
+    playBtn.addEventListener('click',function(){auto=true});
+  }
+})();
+</script>
+</body>
+</html>
