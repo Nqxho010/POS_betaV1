@@ -9,6 +9,47 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+/* ===== MEDICIÓN DE CLICS =====
+   Pega aquí tus IDs. Si un ID queda vacío, esa herramienta no se carga.
+   - ga4:       ID de Google Analytics 4, ej. "G-ABC123XYZ"
+   - metaPixel: ID del Pixel de Meta (Facebook/Instagram Ads), ej. "123456789012345" */
+window.HUPE_TRACKING = { ga4: "", metaPixel: "" };
+
+(function (cfg) {
+  window.dataLayer = window.dataLayer || [];
+  if (cfg.ga4) {
+    var s = document.createElement("script");
+    s.async = true;
+    s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(cfg.ga4);
+    document.head.appendChild(s);
+    window.gtag = function () { dataLayer.push(arguments); };
+    gtag("js", new Date());
+    gtag("config", cfg.ga4);
+  }
+  if (cfg.metaPixel) {
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq("init", cfg.metaPixel);
+    fbq("track", "PageView");
+  }
+
+  // Cada enlace con data-track="whatsapp|correo|demo|precio" envía un evento al hacer clic.
+  // data-place indica en qué parte de la página estaba el botón.
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest && e.target.closest("[data-track]");
+    if (!el) return;
+    var accion = el.getAttribute("data-track");
+    var lugar = el.getAttribute("data-place") || "pagina";
+    var nombre = "clic_" + accion;
+    dataLayer.push({ event: nombre, ubicacion: lugar });
+    if (window.gtag) gtag("event", nombre, { ubicacion: lugar, transport_type: "beacon" });
+    if (window.fbq) {
+      if (accion === "whatsapp" || accion === "correo") fbq("track", "Contact", { content_name: accion, ubicacion: lugar });
+      else fbq("trackCustom", "Clic_" + accion, { ubicacion: lugar });
+    }
+  }, true);
+})(window.HUPE_TRACKING);
+</script>
 <style>
 :root{
   --bg:#000;
@@ -235,6 +276,20 @@ section{padding:112px 0 0}
 .step h3{margin-top:40px;font-size:17px;font-weight:500;letter-spacing:-.015em}
 .step p{margin-top:6px;color:var(--muted);font-size:14.5px}
 
+/* PRECIO */
+.price{display:grid;grid-template-columns:1fr 1.25fr;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:56px}
+.price-main{padding:40px;display:flex;flex-direction:column;background:radial-gradient(120% 120% at 0% 0%,#101a2e 0%,#0a0a0a 60%)}
+.price-main .from{color:var(--muted);font-size:15px}
+.price-main .amt{display:flex;align-items:baseline;gap:8px;margin-top:6px}
+.price-main .amt b{font-size:clamp(56px,7vw,84px);font-weight:500;letter-spacing:-.05em;line-height:1}
+.price-main .amt span{color:var(--muted);font-size:18px}
+.price-main p{color:var(--muted);margin-top:18px;max-width:38ch}
+.price-main .hero-actions{margin-top:auto;padding-top:32px}
+.price-list{list-style:none;padding:40px;border-left:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:18px 28px;align-content:start}
+.price-list li{display:flex;gap:12px;font-size:15px;line-height:1.4}
+.price-list li svg{width:18px;height:18px;flex:none;margin-top:1px}
+.price-note{margin-top:18px;color:var(--dim);font-size:14px}
+
 /* FAQ */
 .faq{display:grid;grid-template-columns:1fr 1.6fr;gap:48px}
 .faq-list{border-top:1px solid var(--line)}
@@ -268,6 +323,8 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
   .ai-intro,.faq{grid-template-columns:1fr;gap:24px}
   .duo{grid-template-columns:1fr}
   .duo > div + div{border-left:0;border-top:1px solid var(--line)}
+  .price{grid-template-columns:1fr}
+  .price-list{border-left:0;border-top:1px solid var(--line)}
   .flow{grid-template-columns:repeat(2,1fr)}
   .foot{grid-template-columns:1fr 1fr}
 }
@@ -286,6 +343,8 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
   .cta{padding:72px 0;margin-top:80px}
   .invoice{width:82%}
   .shot{margin-top:44px}
+  .price-main,.price-list{padding:24px 20px}
+  .price-list{grid-template-columns:1fr;gap:14px}
   .duo-body{padding:22px 20px 24px}
   .icons{gap:12px}
   .icons span{width:56px;height:56px;border-radius:14px}
@@ -311,11 +370,12 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       <a href="#modulos">Módulos</a>
       <a href="#ia">Inteligencia artificial</a>
       <a href="#local">Local y offline</a>
+      <a href="#precio">Precio</a>
       <a href="#preguntas">Preguntas</a>
     </nav>
     <div class="nav-cta">
       <a href="#contacto" class="btn btn-ghost">Contacto</a>
-      <a href="#contacto" class="btn btn-light">Pedir una demo</a>
+      <a href="#contacto" class="btn btn-light" data-track="demo" data-place="menu">Pedir una demo</a>
     </div>
   </div>
 </header>
@@ -326,7 +386,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
     <h1>El punto de venta simple que entiende tu negocio</h1>
     <p class="lede">HUPE corre en la computadora de tu local: vende, cobra con SINPE Móvil, imprime el tiquete y lleva tu inventario aunque se caiga el internet. Sin trámites ni configuraciones complicadas. Pronto, con inteligencia artificial que lee facturas de proveedores y predice qué se te va a acabar.</p>
     <div class="hero-actions">
-      <a href="#contacto" class="btn btn-light btn-lg">Pedir una demo</a>
+      <a href="#contacto" class="btn btn-light btn-lg" data-track="demo" data-place="inicio">Pedir una demo</a>
       <a href="#ia" class="btn btn-dark btn-lg">Ver lo que viene con IA</a>
     </div>
 
@@ -566,6 +626,37 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
     </div>
   </section>
 
+  <!-- PRECIO -->
+  <section id="precio">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Un precio mensual, sin sorpresas</h2>
+        <p>Paga por mes y usa HUPE en tu local desde el primer día.</p>
+      </div>
+      <div class="price">
+        <div class="price-main">
+          <span class="from">Desde</span>
+          <div class="amt"><b>$70</b><span>al mes</span></div>
+          <p>El precio final depende de cuántas cajas y cajeros necesite tu negocio. Te lo confirmamos por WhatsApp en minutos.</p>
+          <div class="hero-actions">
+            <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20cotizar%20HUPE%20para%20mi%20negocio" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="whatsapp" data-place="precio">Cotizar por WhatsApp</a>
+          </div>
+        </div>
+        <ul class="price-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Punto de venta con efectivo, SINPE Móvil y tarjeta</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Inventario y catálogo de productos</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Reportes de ventas</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Cierre de caja diario</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Devoluciones</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Usuarios para tus cajeros</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Instalación en tu computadora</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Soporte por WhatsApp</li>
+        </ul>
+      </div>
+      <p class="price-note">Precio en dólares estadounidenses.</p>
+    </div>
+  </section>
+
   <!-- FAQ -->
   <section id="preguntas">
     <div class="wrap faq">
@@ -605,8 +696,8 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       <h2>Mira HUPE funcionando en tu negocio</h2>
       <p>Agenda una demostración de 20 minutos. Te mostramos una venta completa, el control de inventario y lo que viene con IA.</p>
       <div class="hero-actions">
-        <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20una%20demo%20de%20HUPE" class="btn btn-light btn-lg" target="_blank" rel="noopener">Escribir por WhatsApp</a>
-        <a href="mailto:ventas@hupe.cr?subject=Demo%20HUPE" class="btn btn-dark btn-lg">Enviar un correo</a>
+        <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20una%20demo%20de%20HUPE" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="whatsapp" data-place="contacto">Escribir por WhatsApp</a>
+        <a href="mailto:ventas@hupe.cr?subject=Demo%20HUPE" class="btn btn-dark btn-lg" data-track="correo" data-place="contacto">Enviar un correo</a>
       </div>
     </div>
   </div>
@@ -628,11 +719,11 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       </div>
       <div>
         <h4>Ayuda</h4>
-        <ul><li><a href="#preguntas">Preguntas frecuentes</a></li><li><a href="#contacto">Pedir una demo</a></li></ul>
+        <ul><li><a href="#precio">Precio</a></li><li><a href="#preguntas">Preguntas frecuentes</a></li><li><a href="#contacto">Pedir una demo</a></li></ul>
       </div>
       <div>
         <h4>Contacto</h4>
-        <ul><li><a href="mailto:ventas@hupe.cr">ventas@hupe.cr</a></li><li><a href="https://wa.me/50661037050" target="_blank" rel="noopener">WhatsApp</a></li><li>San José, Costa Rica</li></ul>
+        <ul><li><a href="mailto:ventas@hupe.cr" data-track="correo" data-place="pie">ventas@hupe.cr</a></li><li><a href="https://wa.me/50661037050" target="_blank" rel="noopener" data-track="whatsapp" data-place="pie">WhatsApp</a></li><li>San José, Costa Rica</li></ul>
       </div>
     </div>
     <div class="legal">
