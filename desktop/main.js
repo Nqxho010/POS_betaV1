@@ -42,18 +42,14 @@ const PANTALLA_CARGA = `<!doctype html>
     font-family: "DM Sans", "Poppins", "Segoe UI Variable Display", "Segoe UI", sans-serif;
     color: #151515;
     background:
-      radial-gradient(60% 80% at 15% 110%, rgba(58, 118, 222, 0.7) 0%, transparent 65%),
-      radial-gradient(50% 70% at 85% -10%, rgba(226, 238, 255, 0.95) 0%, transparent 65%),
-      linear-gradient(120deg, #a9cbf8 0%, #7fb0f2 100%);
+      radial-gradient(60% 80% at 15% 110%, rgba(110, 60, 235, 0.6) 0%, transparent 65%),
+      radial-gradient(50% 70% at 85% -10%, rgba(243, 238, 255, 0.95) 0%, transparent 65%),
+      linear-gradient(120deg, #c8b4ff 0%, #a585ff 100%);
     user-select: none;
     -webkit-app-region: drag;
   }
-  .marca { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 700; letter-spacing: -0.5px; }
-  .simbolo { position: relative; width: 44px; height: 44px; border-radius: 50%; background: #151515; }
-  .simbolo::after {
-    content: ""; position: absolute; top: 50%; right: -4px; width: 16px; height: 16px;
-    border-radius: 50%; background: #151515; border: 4px solid #a3c6f6; transform: translateY(-50%);
-  }
+  .marca { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 700; letter-spacing: -0.5px; }
+  .marca svg { width: 44px; height: 44px; }
   .barra { width: 180px; height: 5px; border-radius: 999px; background: rgba(21, 21, 21, 0.15); overflow: hidden; }
   .barra::after {
     content: ""; display: block; width: 40%; height: 100%; border-radius: 999px;
@@ -64,7 +60,13 @@ const PANTALLA_CARGA = `<!doctype html>
 </style>
 </head>
 <body>
-  <div class="marca"><span class="simbolo"></span>Punto de Venta</div>
+  <div class="marca">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M7 7V25H19" fill="none" stroke="#151515" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M25 25V7H13" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Lusteph
+  </div>
   <div class="barra"></div>
   <small>Iniciando…</small>
 </body>
@@ -77,7 +79,7 @@ function mostrarPantallaCarga() {
     frame: false,
     resizable: false,
     show: false,
-    backgroundColor: "#a9cbf8",
+    backgroundColor: "#b9a0ff",
     icon: fs.existsSync(ICONO) ? ICONO : undefined
   });
   carga.once("ready-to-show", () => carga.show());
@@ -123,8 +125,8 @@ function crearVentana(puerto) {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    title: "POS Costa Rica",
-    backgroundColor: "#f7f3ea",
+    title: "Lusteph · Punto de Venta",
+    backgroundColor: "#ffffff",
     icon: fs.existsSync(ICONO) ? ICONO : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -206,7 +208,7 @@ if (!app.requestSingleInstanceLock()) {
       await avisarSiFaltaInventario();
     } catch (error) {
       if (!carga.isDestroyed()) carga.destroy();
-      dialog.showErrorBox("POS Costa Rica no pudo iniciar", String(error?.stack || error));
+      dialog.showErrorBox("Lusteph no pudo iniciar", String(error?.stack || error));
       app.quit();
     }
   });

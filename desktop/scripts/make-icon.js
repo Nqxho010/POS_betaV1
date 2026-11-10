@@ -1,4 +1,4 @@
-// Genera build/icon.png y build/icon.ico a partir del símbolo de la marca.
+// Genera build/icon.png y build/icon.ico a partir del logo de Lusteph.
 // Uso: npm run icon   (solo hace falta si se cambia el diseño del ícono)
 
 const { app, BrowserWindow } = require("electron");
@@ -14,40 +14,16 @@ const DISENO = `<!doctype html>
 <style>
   * { margin: 0; }
   html, body { width: 256px; height: 256px; background: transparent; overflow: hidden; }
-  .fondo {
-    position: relative;
-    width: 256px;
-    height: 256px;
-    border-radius: 58px;
-    background:
-      radial-gradient(70% 70% at 20% 110%, rgba(58, 118, 222, 0.75) 0%, transparent 65%),
-      radial-gradient(60% 60% at 85% -5%, rgba(226, 238, 255, 0.95) 0%, transparent 65%),
-      linear-gradient(120deg, #a9cbf8 0%, #7fb0f2 100%);
-  }
-  .simbolo {
-    position: absolute;
-    top: 58px;
-    left: 50px;
-    width: 140px;
-    height: 140px;
-    border-radius: 50%;
-    background: #151515;
-  }
-  .simbolo::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    right: -18px;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: #151515;
-    border: 13px solid #94bdf5;
-    transform: translateY(-50%);
-  }
+  svg { display: block; }
 </style>
 </head>
-<body><div class="fondo"><div class="simbolo"></div></div></body>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#000"/>
+  <path d="M7 7V25H19" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25 25V7H13" fill="none" stroke="#9b6bff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+</body>
 </html>`;
 
 // Entrada BMP de un .ico: cabecera DIB, píxeles BGRA de abajo hacia arriba y máscara vacía

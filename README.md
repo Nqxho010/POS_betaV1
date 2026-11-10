@@ -1,10 +1,10 @@
-# POS Costa Rica
+# Lusteph · Punto de Venta
 
 Punto de venta para negocios pequeños de Costa Rica (régimen simplificado). Funciona en la computadora del negocio, sin depender de internet, como aplicación de escritorio para Windows o desde el navegador.
 
 Los productos se leen del archivo `FacInve.DBF` del negocio, las ventas se guardan en SQLite y al cobrar se genera un tiquete imprimible para el cliente. No emite factura electrónica.
 
-> Versión actual: **1.0.0-beta.3**
+> Versión actual: **1.0.0-beta.4**
 
 ## Qué hace
 
@@ -121,7 +121,7 @@ npm install
 npm run dist
 ```
 
-El instalador queda en `desktop/dist/POS Costa Rica Setup <versión>.exe`.
+El instalador queda en `desktop/dist/Lusteph-POS-Setup-<versión>.exe`.
 
 En el primer arranque la app crea su propio `.env` con claves únicas para esa instalación. La contraseña inicial del administrador está en ese archivo (`ADMIN_PASSWORD`); conviene cambiarla desde la app al ingresar.
 
@@ -138,6 +138,38 @@ Si `npm run dist` falla por permisos al crear enlaces simbólicos, hay que activ
 | `BACKUP_DIR` | Carpeta de respaldos; lo ideal es otro disco o una USB |
 | `VENTA_SIN_EXISTENCIA` | `avisar` (por defecto, el cajero confirma), `bloquear` o `permitir` |
 | `NOMBRE_COMERCIAL`, `CEDULA_EMISOR`, `DIRECCION_EXACTA`, `TELEFONO` | Datos del negocio impresos en el tiquete |
+
+## Licencia mensual
+
+Cada instalación necesita un código de licencia firmado por el vendedor. Sin él,
+el POS funciona 7 días de prueba desde el primer arranque.
+
+| Etapa | Qué pasa |
+|---|---|
+| Activa | Funciona normal |
+| 7 días antes de vencer | Franja amarilla: "Tu licencia vence el …" |
+| Vencida, primeros 5 días | Franja roja, pero sigue vendiendo (gracia) |
+| Después de la gracia | No deja cobrar ventas nuevas; reportes, cierre y respaldos siguen |
+| Fecha de Windows atrasada | Bloquea ventas hasta corregir la fecha |
+
+**Cómo renovar a un cliente**
+
+1. El cliente abre Administración → Licencia y le envía el **ID de este equipo** (ej. `5E69-B0F4-E921`).
+2. Usted genera el código (solo en su computadora, donde está la clave privada):
+
+   ```bash
+   node licencias/emitir.js --cliente "Nombre del negocio" --equipo 5E69-B0F4-E921 --meses 1
+   ```
+
+   Para renovar desde el vencimiento anterior use `--desde AAAA-MM-DD`; para una fecha exacta, `--hasta AAAA-MM-DD`.
+   Si el cliente adelantó la fecha de Windows por error y quedó bloqueado, agregue `--reiniciar-reloj`.
+3. Le envía el código por WhatsApp; el cliente lo pega en Administración → Licencia → Activar. No necesita internet.
+
+Cada código queda anotado en `%USERPROFILE%\.lusteph-licencias\emitidas.csv`.
+
+**La clave privada** está en `%USERPROFILE%\.lusteph-licencias\privada.pem` y nunca va al repositorio.
+Respáldela: sin ella no se pueden emitir más licencias, y quien la tenga puede fabricarlas.
+La clave pública correspondiente está en `backend/src/utils/licencia.js`.
 
 ## Instalar para varios clientes
 

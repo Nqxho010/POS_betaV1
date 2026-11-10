@@ -104,6 +104,10 @@ const apiService = {
 
   getBackups: () => apiService.request("/admin/backups"),
 
+  getLicense: () => apiService.request("/license"),
+
+  activateLicense: (codigo) => apiService.post("/license", { codigo }),
+
   createBackup: () => apiService.post("/admin/backups", {}),
 
   login: async (username, password) => {
@@ -453,10 +457,10 @@ function LoginScreen({ onLogin }) {
     <div className="login-container">
       <div className="login-box">
         <h1>
-          <span className="brand-mark" aria-hidden="true" />
-          POS Costa Rica
+          <LogoLusteph size={40} />
+          Lusteph
         </h1>
-        <p>Sistema de Punto de Venta</p>
+        <p>Punto de Venta</p>
         <form onSubmit={handleLogin}>
           <input
             type="text"
@@ -1252,7 +1256,8 @@ const VISTAS_ADMIN = [
   { id: "admin-usuarios", label: "Crear usuarios" },
   { id: "admin-inventario", label: "Agregar producto o cantidad" },
   { id: "admin-negativos", label: "Existencias en negativo" },
-  { id: "admin-respaldos", label: "Respaldos" }
+  { id: "admin-respaldos", label: "Respaldos" },
+  { id: "admin-licencia", label: "Licencia" }
 ];
 
 function AdminMenu({ view, onSelect }) {
@@ -1856,6 +1861,130 @@ function AdminBackupsScreen() {
   );
 }
 
+// Logo de Lusteph: dos L entrelazadas, negra y violeta
+function LogoLusteph({ size = 34 }) {
+  return (
+    <svg className="logo-lusteph" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M7 7V25H19" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M25 25V7H13" fill="none" stroke="#9b6bff" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Franja bajo el encabezado: amarilla antes de vencer, roja vencida o bloqueada
+function AvisoLicencia({ licencia, esAdmin, onAbrir }) {
+  if (!licencia || licencia.nivel === "ok") return null;
+  return (
+    <div className={`aviso-licencia nivel-${licencia.nivel}`} role={licencia.nivel === "alerta" ? "alert" : "status"}>
+      <span>{licencia.mensaje}</span>
+      {esAdmin && (
+        <button className="btn-secondary" onClick={onAbrir}>
+          Activar licencia
+        </button>
+      )}
+    </div>
+  );
+}
+
+const NOMBRES_ESTADO_LICENCIA = {
+  activa: "Activa",
+  por_vencer: "Por vencer",
+  gracia: "Vencida (en gracia)",
+  vencida: "Vencida: ventas bloqueadas",
+  prueba: "Período de prueba",
+  sin_licencia: "Sin licencia: ventas bloqueadas",
+  reloj: "Fecha de la computadora atrasada"
+};
+
+// Administración → Licencia: muestra el ID de equipo y activa el código mensual
+function AdminLicenseScreen({ licencia, onCambio }) {
+  const [codigo, setCodigo] = useState("");
+  const [mensaje, setMensaje] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const copiarEquipo = async () => {
+    try {
+      await navigator.clipboard.writeText(licencia.equipo);
+      notify("ok", "ID de equipo copiado");
+    } catch {
+      notify("error", "No se pudo copiar; anótelo a mano");
+    }
+  };
+
+  const activar = async (e) => {
+    e.preventDefault();
+    if (!codigo.trim()) return;
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      const estado = await apiService.activateLicense(codigo.trim());
+      onCambio(estado);
+      setCodigo("");
+      setMensaje({ ok: true, texto: `Licencia activada. ${estado.mensaje}` });
+    } catch (err) {
+      setMensaje({ ok: false, texto: err.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="report-page">
+      <div className="report-card medium">
+        <div className="report-header">
+          <h2><Icon nombre="usuario" />Licencia</h2>
+        </div>
+
+        {!licencia ? (
+          <p className="report-empty">Cargando...</p>
+        ) : (
+          <>
+            <div className="stat-grid">
+              <div className="stat">
+                <span>Estado</span>
+                <strong>{NOMBRES_ESTADO_LICENCIA[licencia.estado] || licencia.estado}</strong>
+              </div>
+              <div className="stat">
+                <span>Vence</span>
+                <strong>{licencia.vence || "—"}</strong>
+              </div>
+              <div className="stat highlight">
+                <span>ID de este equipo</span>
+                <strong className="equipo-id">{licencia.equipo}</strong>
+              </div>
+            </div>
+
+            <p className={`licencia-estado nivel-${licencia.nivel}`}>{licencia.mensaje}</p>
+            {licencia.cliente && <p className="backup-info">Cliente: <strong>{licencia.cliente}</strong></p>}
+
+            <p className="backup-info">
+              Para renovar, pague la mensualidad y envíe el ID de este equipo por {licencia.contacto}.
+              Recibirá un código: péguelo aquí y presione Activar. No hace falta internet.
+            </p>
+            <button className="btn-secondary" onClick={copiarEquipo}>Copiar ID de equipo</button>
+
+            <form className="licencia-form" onSubmit={activar}>
+              <label htmlFor="codigo-licencia">Código de licencia</label>
+              <textarea
+                id="codigo-licencia"
+                rows="4"
+                spellCheck="false"
+                placeholder="LUS1...."
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
+              />
+              <button className="btn-refresh" type="submit" disabled={guardando || !codigo.trim()}>
+                {guardando ? "Activando..." : "Activar"}
+              </button>
+              <FormMessage mensaje={mensaje} />
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Aviso antes de cobrar productos sin existencia suficiente.
 // aviso: { faltantes, puedeConfirmar }  onResponder(true | false)
 function AvisoSinExistencia({ aviso, onResponder }) {
@@ -2106,6 +2235,22 @@ function POSScreen({ onLogout }) {
   }, []);
 
   const esAdmin = usuario?.rol === "admin";
+
+  // Licencia: se revisa al entrar y cada 30 minutos
+  const [licencia, setLicencia] = useState(null);
+  const revisarLicencia = useCallback(() => {
+    apiService.getLicense().then(setLicencia).catch(() => {});
+  }, []);
+  useEffect(() => {
+    revisarLicencia();
+    const intervalo = setInterval(revisarLicencia, 30 * 60 * 1000);
+    return () => clearInterval(intervalo);
+  }, [revisarLicencia]);
+  // Al volver a Inicio (por ejemplo, después de activar o si cambió la fecha)
+  useEffect(() => {
+    if (view === "inicio") revisarLicencia();
+  }, [view, revisarLicencia]);
+  const ventasBloqueadas = licencia && !licencia.permiteVender;
   // Con el aviso abierto, el lector y los atajos de Inicio quedan en pausa
   const enInicio = view === "inicio" && !aviso;
 
@@ -2184,6 +2329,11 @@ function POSScreen({ onLogout }) {
       try {
         response = await apiService.createSale(saleData);
       } catch (error) {
+        if (error.datos?.codigo === "LICENCIA") {
+          setLicencia(error.datos.licencia);
+          notify("error", error.message);
+          return false;
+        }
         if (error.datos?.codigo !== "SIN_EXISTENCIA") throw error;
         const confirmar = await preguntarSinExistencia(error.datos);
         if (!confirmar) return false;
@@ -2211,9 +2361,9 @@ function POSScreen({ onLogout }) {
     <div className="pos-container">
       <header className="pos-header">
         <div className="pos-brand">
-          <span className="brand-place">Costa Rica</span>
+          <span className="brand-place">Lusteph</span>
           <h1>
-            <span className="brand-mark" aria-hidden="true" />
+            <LogoLusteph />
             Punto de Venta
           </h1>
         </div>
@@ -2254,6 +2404,8 @@ function POSScreen({ onLogout }) {
         </div>
       </header>
 
+      <AvisoLicencia licencia={licencia} esAdmin={esAdmin} onAbrir={() => setView("admin-licencia")} />
+
       {view === "productos" && <ProductsScreen />}
       {view === "reportes" && <ReportsScreen esAdmin={esAdmin} />}
       {view === "cierre" && <CashClosingScreen esAdmin={esAdmin} />}
@@ -2263,6 +2415,7 @@ function POSScreen({ onLogout }) {
       {esAdmin && view === "admin-negativos" && <AdminNegativeStockScreen />}
       {aviso && <AvisoSinExistencia aviso={aviso} onResponder={responderAviso} />}
       {esAdmin && view === "admin-respaldos" && <AdminBackupsScreen />}
+      {esAdmin && view === "admin-licencia" && <AdminLicenseScreen licencia={licencia} onCambio={setLicencia} />}
 
       {/* Inicio queda montado (oculto) para no perder el carrito al cambiar de vista */}
       <div className="pos-content" style={view === "inicio" ? undefined : { display: "none" }}>
@@ -2277,7 +2430,14 @@ function POSScreen({ onLogout }) {
             onQuantityChange={handleQuantityChange}
           />
 
-          {cartItems.length > 0 && (
+          {cartItems.length > 0 && ventasBloqueadas && (
+            <div className="ventas-bloqueadas" role="alert">
+              <h3>Ventas bloqueadas</h3>
+              <p>{licencia.mensaje}</p>
+            </div>
+          )}
+
+          {cartItems.length > 0 && !ventasBloqueadas && (
             <PaymentForm
               cartTotal={cartTotal}
               onPaymentComplete={handlePaymentComplete}

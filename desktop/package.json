@@ -1,8 +1,8 @@
 {
   "name": "pos-costa-rica",
   "productName": "POS Costa Rica",
-  "version": "1.0.0-beta.3",
-  "description": "Punto de venta para Costa Rica - aplicación de escritorio",
+  "version": "1.0.0-beta.4",
+  "description": "Lusteph - punto de venta para Costa Rica",
   "author": "POS Costa Rica",
   "private": true,
   "main": "main.js",
@@ -52,7 +52,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "POS Costa Rica"
+      "shortcutName": "Lusteph POS",
+      "artifactName": "Lusteph-POS-Setup-${version}.${ext}"
     }
   }
 }

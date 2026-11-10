@@ -14,6 +14,7 @@ const mkdirp = require("mkdirp");
 const crypto = require("crypto");
 const InventarioDBF = require("./utils/dbfInventario");
 const { crearRespaldo, listarRespaldos } = require("./utils/respaldo");
+const licencia = require("./utils/licencia");
 // El .env vive junto a este archivo, no en el directorio desde donde se ejecuta
 require('dotenv').config({ path: path.join(__dirname, ".env") });
 
@@ -157,6 +158,15 @@ async function initializeDatabase() {
   } else {
     console.warn("⚠️ ADMIN_PASSWORD no está en el .env: no se crea el usuario admin");
   }
+
+  // Datos internos del sistema: licencia, primer arranque y fecha más reciente vista
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS sistema (
+      clave TEXT PRIMARY KEY,
+      valor TEXT
+    )
+  `);
+  await dbRun(db, `INSERT OR IGNORE INTO sistema (clave, valor) VALUES ('primer_uso', ?)`, [String(Date.now())]);
 
   // Tabla de auditoría (acciones de los usuarios)
   await dbRun(db, `
@@ -1004,6 +1014,12 @@ app.post("/api/products/:id/count", authMiddleware, async (req, res) => {
 // VENTAS
 app.post("/api/sales", authMiddleware, async (req, res) => {
   try {
+    // Licencia vencida o reloj atrasado: no se registran ventas nuevas
+    const estadoLic = await estadoLicencia();
+    if (!estadoLic.permiteVender) {
+      return res.status(403).json({ error: estadoLic.mensaje, codigo: "LICENCIA", licencia: estadoLic });
+    }
+
     const { ventaId, repetida } = await salesService.createSale(req.body, req.usuarioId);
     const venta = await salesService.getSaleById(ventaId);
 
@@ -1214,6 +1230,76 @@ app.get("/api/reports/negative-stock", authMiddleware, async (req, res) => {
         total: p.total
       }))
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// LICENCIA
+async function leerSistema(clave) {
+  const fila = await dbGet(db, `SELECT valor FROM sistema WHERE clave = ?`, [clave]);
+  return fila ? fila.valor : null;
+}
+
+function guardarSistema(clave, valor) {
+  return dbRun(
+    db,
+    `INSERT INTO sistema (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor`,
+    [clave, String(valor)]
+  );
+}
+
+// Estado actual; además guarda la fecha más reciente vista (contra el reloj atrasado)
+async function estadoLicencia() {
+  const ahora = Date.now();
+  const codigo = await leerSistema("licencia");
+  let datos = null;
+  if (codigo) {
+    try {
+      datos = licencia.leerCodigo(codigo);
+    } catch {
+      datos = null; // código de otra computadora o alterado: como si no hubiera
+    }
+  }
+  const primerUso = Number(await leerSistema("primer_uso")) || ahora;
+  const maxVisto = Number(await leerSistema("max_visto")) || 0;
+  const estado = licencia.evaluar({ licencia: datos, primerUso, maxVisto, ahora });
+  if (estado.estado !== "reloj" && ahora > maxVisto) await guardarSistema("max_visto", ahora);
+  return estado;
+}
+
+app.get("/api/license", authMiddleware, async (req, res) => {
+  try {
+    res.json(await estadoLicencia());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Activar el código que envía el vendedor (solo admin)
+app.post("/api/license", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+    let datos;
+    try {
+      datos = licencia.leerCodigo(req.body?.codigo);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    await guardarSistema("licencia", String(req.body.codigo).replace(/\s+/g, ""));
+    // Solo un código emitido con --reiniciar-reloj quita el bloqueo por fecha
+    // (por ejemplo, si alguien adelantó el reloj por error)
+    if (datos.reiniciaReloj) await guardarSistema("max_visto", Date.now());
+
+    await registrarAuditoria(req.usuarioId, "LICENCIA_ACTIVADA", "sistema", null, null, {
+      cliente: datos.cliente,
+      vence: datos.vence,
+      reiniciaReloj: !!datos.reiniciaReloj
+    });
+    res.json(await estadoLicencia());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
