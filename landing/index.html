@@ -1,11 +1,118 @@
 <!doctype html>
-<html lang="es">
+<html lang="es-CR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HUPE — Punto de venta simple para tu negocio</title>
-<meta name="description" content="HUPE es un punto de venta simple que corre en tu local: ventas, SINPE Móvil, inventario, cierre de caja y funciona sin internet. Pronto con IA.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23fff'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%23000' stroke-width='3.2' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>Lusteph — Punto de venta (POS) simple para comercios en Costa Rica</title>
+<meta name="description" content="Lusteph es un sistema de punto de venta para minisúper, pulpería, ferretería y soda en Costa Rica: ventas, SINPE Móvil, inventario, tiquetes y cierre de caja. Funciona sin internet. Desde ₡30.000 al mes.">
+<meta name="keywords" content="punto de venta, POS Costa Rica, sistema de punto de venta, software para minisúper, sistema para pulpería, inventario, SINPE Móvil, cierre de caja, caja registradora, Lusteph">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="Lusteph">
+<meta name="theme-color" content="#000000">
+<meta name="geo.region" content="CR-SJ">
+<meta name="geo.placename" content="San José, Costa Rica">
+<link rel="canonical" href="https://lusteph.com/">
+<link rel="alternate" hreflang="es-CR" href="https://lusteph.com/">
+
+<!-- Vista previa al compartir (WhatsApp, Facebook, LinkedIn) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lusteph">
+<meta property="og:locale" content="es_CR">
+<meta property="og:url" content="https://lusteph.com/">
+<meta property="og:title" content="Lusteph — El punto de venta simple para tu negocio">
+<meta property="og:description" content="Vende, cobra con SINPE Móvil, controla tu inventario y cierra caja, aunque se caiga el internet. Desde ₡30.000 al mes.">
+<meta property="og:image" content="https://lusteph.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Lusteph, punto de venta simple para comercios de Costa Rica">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Lusteph — El punto de venta simple para tu negocio">
+<meta name="twitter:description" content="Vende, cobra con SINPE Móvil, controla tu inventario y cierra caja, aunque se caiga el internet.">
+<meta name="twitter:image" content="https://lusteph.com/og-image.png">
+
+<!-- Datos estructurados para Google -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://lusteph.com/#org",
+      "name": "Lusteph",
+      "url": "https://lusteph.com/",
+      "logo": "https://lusteph.com/marca/lusteph-icono-512.png",
+      "areaServed": "CR",
+      "address": { "@type": "PostalAddress", "addressLocality": "San José", "addressCountry": "CR" },
+      "contactPoint": { "@type": "ContactPoint", "telephone": "+506-6103-7050", "contactType": "sales", "availableLanguage": "Spanish" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Lusteph",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Windows",
+      "inLanguage": "es",
+      "description": "Punto de venta simple y local: ventas, SINPE Móvil, inventario, tiquetes, devoluciones y cierre de caja. Funciona sin internet.",
+      "publisher": { "@id": "https://lusteph.com/#org" },
+      "offers": { "@type": "Offer", "price": "30000", "priceCurrency": "CRC", "url": "https://lusteph.com/#precio" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿Necesito internet para usar el POS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Lusteph y su base de datos están instalados en tu computadora, así que vendes, cobras y cierras caja sin conexión. El internet solo hará falta para las funciones de IA cuando estén disponibles."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Lusteph emite facturas electrónicas para Hacienda?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Lusteph es un punto de venta simplificado: registra ventas, imprime tiquetes y controla tu inventario, pero no genera ni envía comprobantes XML a Hacienda. Es ideal si tu negocio no necesita facturación electrónica desde la caja."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué necesito para instalarlo?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Una computadora con Windows. Opcionalmente, lector de código de barras e impresora térmica para los tiquetes. Nosotros hacemos la instalación y cargamos tu catálogo inicial."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cuándo llegan las funciones de inteligencia artificial?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Están en desarrollo. El lector de facturas de proveedores, el asistente de preguntas y la predicción de inventario se irán habilitando como actualizaciones del mismo sistema, sin reinstalar nada."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿La IA puede ver mis datos sin permiso?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Tu información vive en tu equipo. Las funciones de IA procesan solo lo necesario para responder lo que pediste —una factura, una pregunta, una proyección— y nada se usa para entrenar modelos de terceros."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Puedo tener varios cajeros?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. Cada cajero entra con su propio usuario y contraseña, y el sistema registra quién hizo cada venta, devolución y cierre de caja."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Cpath d='M7 7V25H19' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M25 25V7H13' fill='none' stroke='%239b6bff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
@@ -14,7 +121,7 @@
    Pega aquí tus IDs. Si un ID queda vacío, esa herramienta no se carga.
    - ga4:       ID de Google Analytics 4, ej. "G-ABC123XYZ"
    - metaPixel: ID del Pixel de Meta (Facebook/Instagram Ads), ej. "123456789012345" */
-window.HUPE_TRACKING = { ga4: "", metaPixel: "" };
+window.LUSTEPH_TRACKING = { ga4: "", metaPixel: "" };
 
 (function (cfg) {
   window.dataLayer = window.dataLayer || [];
@@ -33,7 +140,7 @@ window.HUPE_TRACKING = { ga4: "", metaPixel: "" };
     fbq("track", "PageView");
   }
 
-  // Cada enlace con data-track="whatsapp|correo|demo|precio" envía un evento al hacer clic.
+  // Cada enlace con data-track="ventas|whatsapp" envía un evento al hacer clic.
   // data-place indica en qué parte de la página estaba el botón.
   document.addEventListener("click", function (e) {
     var el = e.target.closest && e.target.closest("[data-track]");
@@ -44,11 +151,11 @@ window.HUPE_TRACKING = { ga4: "", metaPixel: "" };
     dataLayer.push({ event: nombre, ubicacion: lugar });
     if (window.gtag) gtag("event", nombre, { ubicacion: lugar, transport_type: "beacon" });
     if (window.fbq) {
-      if (accion === "whatsapp" || accion === "correo") fbq("track", "Contact", { content_name: accion, ubicacion: lugar });
+      if (accion === "whatsapp" || accion === "ventas") fbq("track", "Contact", { content_name: accion, ubicacion: lugar });
       else fbq("trackCustom", "Clic_" + accion, { ubicacion: lugar });
     }
   }, true);
-})(window.HUPE_TRACKING);
+})(window.LUSTEPH_TRACKING);
 </script>
 <style>
 :root{
@@ -98,7 +205,7 @@ img,svg{display:block}
 .hero p.lede{margin-top:24px;font-size:clamp(17px,1.6vw,20px);color:var(--muted);max-width:56ch;line-height:1.5}
 .hero-actions{margin-top:36px;display:flex;gap:12px;flex-wrap:wrap}
 
-/* APP MOCKUP — recreación del estilo real de HUPE */
+/* APP MOCKUP — recreación del estilo real de Lusteph */
 .shot{margin-top:64px;border:1px solid var(--line-strong);border-radius:16px;background:#0d0d0d;overflow:hidden;box-shadow:0 40px 120px -40px rgba(126,169,242,.45)}
 .shot-bar{display:flex;align-items:center;gap:7px;height:38px;padding:0 14px;border-bottom:1px solid var(--line);background:#111}
 .shot-bar i{width:10px;height:10px;border-radius:50%;background:#2a2a2a}
@@ -278,7 +385,7 @@ section{padding:112px 0 0}
 
 /* PRECIO */
 .price{display:grid;grid-template-columns:1fr 1.25fr;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:56px}
-.price-main{padding:40px;display:flex;flex-direction:column;background:radial-gradient(120% 120% at 0% 0%,#101a2e 0%,#0a0a0a 60%)}
+.price-main{padding:40px;display:flex;flex-direction:column;background:radial-gradient(120% 120% at 0% 0%,#241845 0%,#0a0a0a 62%)}
 .price-main .from{color:var(--muted);font-size:15px}
 .price-main .amt{display:flex;align-items:baseline;gap:8px;margin-top:6px}
 .price-main .amt b{font-size:clamp(56px,7vw,84px);font-weight:500;letter-spacing:-.05em;line-height:1}
@@ -362,9 +469,9 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
 
 <header class="nav">
   <div class="wrap">
-    <a href="#" class="brand" aria-label="HUPE, inicio">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#fff"/><path d="M10 8v16M22 8v16M10 16h12" stroke="#000" stroke-width="3.2" fill="none" stroke-linejoin="round"/></svg>
-      HUPE
+    <a href="#" class="brand" aria-label="Lusteph, inicio">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 7V25H19" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 25V7H13" fill="none" stroke="#9b6bff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Lusteph
     </a>
     <nav class="nav-links" aria-label="Principal">
       <a href="#modulos">Módulos</a>
@@ -374,8 +481,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       <a href="#preguntas">Preguntas</a>
     </nav>
     <div class="nav-cta">
-      <a href="#contacto" class="btn btn-ghost">Contacto</a>
-      <a href="#contacto" class="btn btn-light" data-track="demo" data-place="menu">Pedir una demo</a>
+      <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20hablar%20con%20ventas%20de%20Lusteph" class="btn btn-light" target="_blank" rel="noopener" data-track="ventas" data-place="menu">Contact sales</a>
     </div>
   </div>
 </header>
@@ -384,14 +490,14 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
   <!-- HERO -->
   <div class="wrap hero" id="inicio">
     <h1>El punto de venta simple que entiende tu negocio</h1>
-    <p class="lede">HUPE corre en la computadora de tu local: vende, cobra con SINPE Móvil, imprime el tiquete y lleva tu inventario aunque se caiga el internet. Sin trámites ni configuraciones complicadas. Pronto, con inteligencia artificial que lee facturas de proveedores y predice qué se te va a acabar.</p>
+    <p class="lede">Lusteph corre en la computadora de tu local: vende, cobra con SINPE Móvil, imprime el tiquete y lleva tu inventario aunque se caiga el internet. Sin trámites ni configuraciones complicadas. Pronto, con inteligencia artificial que lee facturas de proveedores y predice qué se te va a acabar.</p>
     <div class="hero-actions">
-      <a href="#contacto" class="btn btn-light btn-lg" data-track="demo" data-place="inicio">Pedir una demo</a>
+      <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20hablar%20con%20ventas%20de%20Lusteph" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="ventas" data-place="inicio">Contact sales</a>
       <a href="#ia" class="btn btn-dark btn-lg">Ver lo que viene con IA</a>
     </div>
 
-    <figure class="shot" role="img" aria-label="Pantalla de venta de HUPE: búsqueda de productos, carrito con total y cobro por SINPE Móvil">
-      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>HUPE · Punto de venta</span></div>
+    <figure class="shot" role="img" aria-label="Pantalla de venta de Lusteph: búsqueda de productos, carrito con total y cobro por SINPE Móvil">
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>Lusteph · Punto de venta</span></div>
       <div class="screen" id="hero-screen" aria-hidden="true"></div>
     </figure>
   </div>
@@ -433,7 +539,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       </div>
       <div class="cell">
         <div class="ico" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20M8.5 16.4a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.7M19 12.9a10 10 0 0 0-2-1.5M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.7 5M12 20h.01"/></svg></div>
-        <h3>Modo offline</h3><p>Vende sin internet, sincroniza al volver</p>
+        <h3>Modo offline</h3><p>Vende sin internet, todo queda en tu equipo</p>
       </div>
       <div class="cell">
         <div class="ico" style="background:#1a1a1a;border:1px solid var(--line-strong)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.5A6.5 6.5 0 0 1 21.5 20"/></svg></div>
@@ -450,14 +556,14 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
         <h3>Asistente del negocio</h3><p>Pregunta por tus ventas en palabras normales</p>
       </div>
     </div>
-    <p class="grid-foot"><strong>Simple a propósito.</strong> HUPE hace lo que un comercio necesita todos los días —vender, cobrar, controlar el inventario y cerrar caja— sin facturación electrónica ni envíos a Hacienda que compliquen la operación.</p>
+    <p class="grid-foot"><strong>Simple a propósito.</strong> Lusteph hace lo que un comercio necesita todos los días —vender, cobrar, controlar el inventario y cerrar caja— sin facturación electrónica ni envíos a Hacienda que compliquen la operación.</p>
   </div>
 
   <!-- DEMO -->
   <section id="demo">
     <div class="wrap">
       <div class="sec-head">
-        <h2>Así se ve HUPE por dentro</h2>
+        <h2>Así se ve Lusteph por dentro</h2>
         <p>Pantallas limpias y botones grandes: tu equipo aprende a vender en una tarde.</p>
       </div>
       <div class="duo">
@@ -484,7 +590,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
               <span style="background:linear-gradient(160deg,#2b2b2b,#111)" title="Impresora térmica"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></span>
               <span style="background:linear-gradient(160deg,#36dc91,#14a463)" title="SINPE Móvil"><svg viewBox="0 0 24 24" fill="none" stroke="#04331c" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2M9.5 10.5l2 2 3.5-4"/></svg></span>
               <span style="background:linear-gradient(160deg,#f1f1f1,#cfcfcf)" title="Tarjeta"><svg viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.8"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6 15h4"/></svg></span>
-              <span style="background:linear-gradient(160deg,#fff,#e8e8e8)" title="HUPE"><svg viewBox="0 0 32 32"><path d="M10 7v18M22 7v18M10 16h12" stroke="#000" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></span>
+              <span style="background:linear-gradient(160deg,#1c1c1c,#050505);border:1px solid #2c2c2c" title="Lusteph"><svg viewBox="0 0 32 32"><path d="M7 7V25H19" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 25V7H13" fill="none" stroke="#9b6bff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
               <span style="background:linear-gradient(160deg,#ffc44d,#f29d0c)" title="Efectivo"><svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="1.8"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/></svg></span>
               <span style="background:linear-gradient(160deg,#2b2b2b,#111)" title="Atajos de teclado"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="2.5" y="6" width="19" height="12" rx="2"/><text x="12" y="14.6" text-anchor="middle" font-size="6.5" font-family="Onest,sans-serif" fill="#fff" stroke="none" font-weight="600">F2</text></svg></span>
               <span style="background:linear-gradient(160deg,#a986ff,#6d3ff0)" title="Asistente con IA"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2.5l1.8 5.2 5.2 1.8-5.2 1.8L12 16.5l-1.8-5.2L5 9.5l5.2-1.8zM18.5 15l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg></span>
@@ -504,7 +610,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
     <div class="wrap">
       <div class="ai-intro sec-head">
         <div>
-          <span class="soon"><i></i>Próximamente en HUPE</span>
+          <span class="soon"><i></i>Próximamente en Lusteph</span>
           <h2>Inteligencia artificial que trabaja dentro de tu caja</h2>
         </div>
         <p>La IA usa los datos que tu POS ya tiene —ventas, productos, compras— para ahorrarte las tareas que hoy haces a mano. Tus datos siguen siendo tuyos y se procesan solo cuando tú lo pides.</p>
@@ -581,7 +687,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
     <div class="wrap">
       <div class="sec-head">
         <h2>Instalado en tu local, no depende de la nube</h2>
-        <p>HUPE vive en la computadora de tu negocio con su propia base de datos. No necesita internet para vender, cobrar ni cerrar caja: si se va la conexión, el local sigue funcionando igual.</p>
+        <p>Lusteph vive en la computadora de tu negocio con su propia base de datos. No necesita internet para vender, cobrar ni cerrar caja: si se va la conexión, el local sigue funcionando igual.</p>
       </div>
       <div class="split">
         <div class="panel">
@@ -631,15 +737,15 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
     <div class="wrap">
       <div class="sec-head">
         <h2>Un precio mensual, sin sorpresas</h2>
-        <p>Paga por mes y usa HUPE en tu local desde el primer día.</p>
+        <p>Paga por mes y usa Lusteph en tu local desde el primer día.</p>
       </div>
       <div class="price">
         <div class="price-main">
           <span class="from">Desde</span>
           <div class="amt"><b>₡30.000</b><span>al mes</span></div>
-          <p>El precio final para cajas y cajeros que necesite tu negocio. Te lo confirmamos por WhatsApp en minutos.</p>
+          <p>El precio final depende de cuántas cajas y cajeros necesite tu negocio. Te lo confirmamos en minutos.</p>
           <div class="hero-actions">
-            <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20cotizar%20HUPE%20para%20mi%20negocio" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="whatsapp" data-place="precio">Cotizar por WhatsApp</a>
+            <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20hablar%20con%20ventas%20de%20Lusteph" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="ventas" data-place="precio">Contact sales</a>
           </div>
         </div>
         <ul class="price-list">
@@ -653,7 +759,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
           <li><svg viewBox="0 0 24 24" fill="none" stroke="#1fc77a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Soporte por WhatsApp</li>
         </ul>
       </div>
-      <p class="price-note">Precio en dólares estadounidenses.</p>
+      <p class="price-note">Precio en colones costarricenses.</p>
     </div>
   </section>
 
@@ -664,11 +770,11 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       <div class="faq-list">
         <details>
           <summary>¿Necesito internet para usar el POS?</summary>
-          <p>No. HUPE y su base de datos están instalados en tu computadora, así que vendes, cobras y cierras caja sin conexión. El internet solo hará falta para las funciones de IA cuando estén disponibles.</p>
+          <p>No. Lusteph y su base de datos están instalados en tu computadora, así que vendes, cobras y cierras caja sin conexión. El internet solo hará falta para las funciones de IA cuando estén disponibles.</p>
         </details>
         <details>
-          <summary>¿HUPE emite facturas electrónicas para Hacienda?</summary>
-          <p>No. HUPE es un punto de venta simplificado: registra ventas, imprime tiquetes y controla tu inventario, pero no genera ni envía comprobantes XML a Hacienda. Es ideal si tu negocio no necesita facturación electrónica desde la caja.</p>
+          <summary>¿Lusteph emite facturas electrónicas para Hacienda?</summary>
+          <p>No. Lusteph es un punto de venta simplificado: registra ventas, imprime tiquetes y controla tu inventario, pero no genera ni envía comprobantes XML a Hacienda. Es ideal si tu negocio no necesita facturación electrónica desde la caja.</p>
         </details>
         <details>
           <summary>¿Qué necesito para instalarlo?</summary>
@@ -693,11 +799,10 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
   <!-- CTA -->
   <div class="cta" id="contacto">
     <div class="wrap">
-      <h2>Mira HUPE funcionando en tu negocio</h2>
-      <p>Agenda una demostración de 20 minutos. Te mostramos una venta completa, el control de inventario y lo que viene con IA.</p>
+      <h2>Mira Lusteph funcionando en tu negocio</h2>
+      <p>Habla con nuestro equipo de ventas. Te mostramos una venta completa, el control de inventario y lo que viene con IA.</p>
       <div class="hero-actions">
-        <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20una%20demo%20de%20HUPE" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="whatsapp" data-place="contacto">Escribir por WhatsApp</a>
-        <a href="mailto:ventas@hupe.cr?subject=Demo%20HUPE" class="btn btn-dark btn-lg" data-track="correo" data-place="contacto">Enviar un correo</a>
+        <a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20hablar%20con%20ventas%20de%20Lusteph" class="btn btn-light btn-lg" target="_blank" rel="noopener" data-track="ventas" data-place="contacto">Contact sales</a>
       </div>
     </div>
   </div>
@@ -708,8 +813,8 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
     <div class="foot">
       <div>
         <div class="brand">
-          <svg viewBox="0 0 32 32" aria-hidden="true" width="24" height="24"><rect width="32" height="32" rx="7" fill="#fff"/><path d="M10 8v16M22 8v16M10 16h12" stroke="#000" stroke-width="3.2" fill="none" stroke-linejoin="round"/></svg>
-          HUPE
+          <svg viewBox="0 0 32 32" aria-hidden="true" width="24" height="24"><path d="M7 7V25H19" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 25V7H13" fill="none" stroke="#9b6bff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Lusteph
         </div>
         <p style="max-width:34ch">Punto de venta simple y local para comercios de Costa Rica.</p>
       </div>
@@ -719,15 +824,15 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
       </div>
       <div>
         <h4>Ayuda</h4>
-        <ul><li><a href="#precio">Precio</a></li><li><a href="#preguntas">Preguntas frecuentes</a></li><li><a href="#contacto">Pedir una demo</a></li></ul>
+        <ul><li><a href="#precio">Precio</a></li><li><a href="#preguntas">Preguntas frecuentes</a></li><li><a href="https://wa.me/50661037050?text=Hola%2C%20quiero%20hablar%20con%20ventas%20de%20Lusteph" target="_blank" rel="noopener" data-track="ventas" data-place="pie-ayuda">Contact sales</a></li></ul>
       </div>
       <div>
         <h4>Contacto</h4>
-        <ul><li><a href="mailto:ventas@hupe.cr" data-track="correo" data-place="pie">ventas@hupe.cr</a></li><li><a href="https://wa.me/50661037050" target="_blank" rel="noopener" data-track="whatsapp" data-place="pie">WhatsApp</a></li><li>San José, Costa Rica</li></ul>
+        <ul><li><a href="https://wa.me/50661037050" target="_blank" rel="noopener" data-track="whatsapp" data-place="pie">WhatsApp 6103 7050</a></li><li>San José, Costa Rica</li></ul>
       </div>
     </div>
     <div class="legal">
-      <span>© <span id="y">2026</span> HUPE</span>
+      <span>© <span id="y">2026</span> Lusteph</span>
       <span>Hecho en Costa Rica</span>
     </div>
   </div>
@@ -736,7 +841,7 @@ footer{padding:64px 0 48px;color:var(--muted);font-size:14px}
 <template id="ui-tpl">
   <div class="ui" data-scene="venta">
     <div class="ui-top">
-      <div class="ui-brand"><small>HUPE</small><b><span class="ui-logo"></span>Punto de Venta</b></div>
+      <div class="ui-brand"><small>Lusteph</small><b><span class="ui-logo"></span>Punto de Venta</b></div>
       <nav class="ui-nav"><span data-nav="venta" class="on">Inicio</span><span data-nav="prod">Productos</span><span>Reportes</span><span data-nav="cierre">Cierre de caja</span></nav>
       <div class="ui-tools"><i></i><i></i><span class="ui-out">Cerrar sesión</span></div>
     </div>
