@@ -18,6 +18,8 @@ Los productos se leen del archivo `FacInve.DBF` del negocio, las ventas se guard
 - Productos manejados como *precio con IVA + utilidad = total*.
 - Las ventas descuentan existencias en el mismo `FacInve.DBF`.
 - El administrador puede agregar productos, sumar existencias y cambiar precio y utilidad.
+- Al cobrar productos sin existencia suficiente el carrito lo marca y el sistema pide confirmación (configurable con `VENTA_SIN_EXISTENCIA`).
+- Reporte de existencias en negativo, donde el administrador anota el conteo físico y corrige la existencia.
 
 **Reportes**
 - Reporte de ventas por día, con reimpresión de tiquetes.
@@ -134,6 +136,7 @@ Si `npm run dist` falla por permisos al crear enlaces simbólicos, hay que activ
 | `ADMIN_PASSWORD` | Contraseña del `admin` que se crea en el primer arranque |
 | `DATA_DIR` | Carpeta de datos del negocio; vacío usa `backend/` |
 | `BACKUP_DIR` | Carpeta de respaldos; lo ideal es otro disco o una USB |
+| `VENTA_SIN_EXISTENCIA` | `avisar` (por defecto, el cajero confirma), `bloquear` o `permitir` |
 | `NOMBRE_COMERCIAL`, `CEDULA_EMISOR`, `DIRECCION_EXACTA`, `TELEFONO` | Datos del negocio impresos en el tiquete |
 
 ## Instalar para varios clientes
@@ -147,6 +150,5 @@ Antes de actualizar una instalación conviene hacer un respaldo desde Administra
 - Imprimir el tiquete directo a la impresora térmica, sin el diálogo de impresión.
 - Anulación de ventas y devoluciones.
 - Fondo inicial de caja en el cierre.
-- Aviso al vender más de lo que hay en existencia.
 - Pruebas automáticas.
 - Firma del instalador y actualización automática.

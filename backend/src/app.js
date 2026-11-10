@@ -51,6 +51,15 @@ const ROLES = ["cajero", "admin"];
 const METODOS_PAGO = ["cash", "sinpe", "tarjeta"];
 const LARGO_MINIMO_PASSWORD = 6;
 
+// Vender más de lo que hay en existencia:
+//   avisar   -> el cajero ve los productos que faltan y confirma (por defecto)
+//   bloquear -> la venta no se registra
+//   permitir -> se vende sin aviso (comportamiento anterior)
+const MODOS_SIN_EXISTENCIA = ["avisar", "bloquear", "permitir"];
+const VENTA_SIN_EXISTENCIA = MODOS_SIN_EXISTENCIA.includes(process.env.VENTA_SIN_EXISTENCIA)
+  ? process.env.VENTA_SIN_EXISTENCIA
+  : "avisar";
+
 // Datos del negocio que salen impresos en el tiquete
 const NEGOCIO = {
   nombre: process.env.NOMBRE_COMERCIAL || "Mi Negocio",
@@ -342,6 +351,28 @@ function errorDeDatos(mensaje) {
   return error;
 }
 
+// Líneas que piden más de lo que hay. lineas: [{ id, cantidad }]
+function buscarFaltantes(lineas) {
+  const pedidas = new Map();
+  for (const { id, cantidad } of lineas) {
+    pedidas.set(id, redondear((pedidas.get(id) || 0) + cantidad));
+  }
+  const faltantes = [];
+  for (const [id, cantidad] of pedidas) {
+    const producto = productService.getProductById(id);
+    if (producto && cantidad > producto.stock_actual) {
+      faltantes.push({
+        id: producto.id,
+        codigo: producto.codigo_barras || producto.codigo,
+        nombre: producto.nombre,
+        existencia: producto.stock_actual,
+        cantidad
+      });
+    }
+  }
+  return faltantes;
+}
+
 // Datos opcionales del cliente para el tiquete: texto limpio o null
 function limpiarCliente(cliente) {
   const texto = (valor, largo) => String(valor ?? "").trim().slice(0, largo) || null;
@@ -500,6 +531,25 @@ const salesService = {
     const numeroVenta = `VENTA-${Date.now()}`;
     const existencias = lineas.map((linea) => ({ id: linea.productId, cantidad: linea.cantidad }));
 
+    // Productos que quedarían en negativo (sumando si se repiten en la venta)
+    const faltantes = buscarFaltantes(existencias);
+    if (faltantes.length > 0 && VENTA_SIN_EXISTENCIA !== "permitir") {
+      if (VENTA_SIN_EXISTENCIA === "bloquear" || !saleData.confirmarSinExistencia) {
+        const error = new Error(
+          VENTA_SIN_EXISTENCIA === "bloquear"
+            ? "No hay existencia suficiente para completar la venta"
+            : "Hay productos sin existencia suficiente"
+        );
+        error.status = 409;
+        error.datos = {
+          codigo: "SIN_EXISTENCIA",
+          puedeConfirmar: VENTA_SIN_EXISTENCIA === "avisar",
+          faltantes
+        };
+        throw error;
+      }
+    }
+
     // 2. Escribir todo o nada
     let ventaId;
     let stockDescontado = false;
@@ -547,6 +597,9 @@ const salesService = {
         totalVenta,
         medioPago
       });
+      if (faltantes.length > 0) {
+        await registrarAuditoria(usuarioId, "VENTA_SIN_EXISTENCIA", "ventas", ventaId, null, { faltantes });
+      }
     } catch (error) {
       console.error("❌ Error registrando auditoría de la venta:", error.message);
     }
@@ -918,6 +971,36 @@ app.post("/api/products/:id/stock", authMiddleware, async (req, res) => {
   }
 });
 
+// Conteo físico: deja la existencia en lo que se contó (solo admin)
+app.post("/api/products/:id/count", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+
+    const existencia = Number(req.body?.existencia);
+    if (req.body?.existencia === "" || !Number.isFinite(existencia) || existencia < 0) {
+      return res.status(400).json({ error: "La existencia contada debe ser 0 o más" });
+    }
+
+    let producto = productService.getProductById(req.params.id);
+    if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
+
+    const anterior = producto.stock_actual;
+    const diferencia = redondear(existencia - anterior);
+    if (diferencia !== 0) producto = productService.addStock(producto.id, diferencia);
+
+    await registrarAuditoria(req.usuarioId, "CONTEO_INVENTARIO", "productos", producto.id,
+      { stock_actual: anterior },
+      { codigo: producto.codigo, stock_actual: producto.stock_actual, diferencia }
+    );
+
+    res.json(producto);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // VENTAS
 app.post("/api/sales", authMiddleware, async (req, res) => {
   try {
@@ -935,7 +1018,7 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
       tiquete: armarTiquete(venta)
     });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message, ...error.datos });
   }
 });
 
@@ -1101,6 +1184,36 @@ app.get("/api/reports/cash-closing", authMiddleware, async (req, res) => {
     }
 
     res.json(cierre);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Productos con existencia negativa, del más negativo al menos (solo admin)
+app.get("/api/reports/negative-stock", authMiddleware, async (req, res) => {
+  try {
+    if (req.rol !== "admin") {
+      return res.status(403).json({ error: "No tienes permiso" });
+    }
+
+    const todos = productService.getAllProducts();
+    const negativos = todos
+      .filter((producto) => producto.stock_actual < 0)
+      .sort((a, b) => a.stock_actual - b.stock_actual);
+
+    res.json({
+      totalProductos: todos.length,
+      enNegativo: negativos.length,
+      unidadesFaltantes: redondear(negativos.reduce((suma, p) => suma - p.stock_actual, 0)),
+      modoVenta: VENTA_SIN_EXISTENCIA,
+      productos: negativos.map((p) => ({
+        id: p.id,
+        codigo: p.codigo_barras || p.codigo,
+        nombre: p.nombre,
+        stock_actual: p.stock_actual,
+        total: p.total
+      }))
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

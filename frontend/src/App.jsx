@@ -41,7 +41,10 @@ const apiService = {
       apiService.onUnauthorized();
     }
     if (!response.ok) {
-      throw new Error(data?.error || `Error ${response.status}`);
+      const error = new Error(data?.error || `Error ${response.status}`);
+      error.status = response.status;
+      error.datos = data;
+      throw error;
     }
     return data;
   },
@@ -67,6 +70,12 @@ const apiService = {
     apiService.request(`/products/search?q=${encodeURIComponent(query)}`),
 
   getAllProducts: () => apiService.request("/products"),
+
+  getNegativeStock: () => apiService.request("/reports/negative-stock"),
+
+  // Conteo físico: deja la existencia en el valor contado
+  countProduct: (productId, existencia) =>
+    apiService.post(`/products/${productId}/count`, { existencia }),
 
   createSale: (saleData) =>
     apiService.request("/sales", {
@@ -492,6 +501,11 @@ function Cart({ items, onRemoveItem, onQuantityChange }) {
                 <div className="item-info">
                   <p className="item-name">{item.nombre}</p>
                   <p className="item-code">Código: {item.codigo_barras}</p>
+                  {item.cantidad > item.stock_actual && (
+                    <p className="item-sin-stock">
+                      Sin existencia suficiente · hay {item.stock_actual}
+                    </p>
+                  )}
                 </div>
 
                 <div className="item-quantity">
@@ -1237,6 +1251,7 @@ function ProductsScreen() {
 const VISTAS_ADMIN = [
   { id: "admin-usuarios", label: "Crear usuarios" },
   { id: "admin-inventario", label: "Agregar producto o cantidad" },
+  { id: "admin-negativos", label: "Existencias en negativo" },
   { id: "admin-respaldos", label: "Respaldos" }
 ];
 
@@ -1841,6 +1856,218 @@ function AdminBackupsScreen() {
   );
 }
 
+// Aviso antes de cobrar productos sin existencia suficiente.
+// aviso: { faltantes, puedeConfirmar }  onResponder(true | false)
+function AvisoSinExistencia({ aviso, onResponder }) {
+  const volverRef = useRef(null);
+
+  useEffect(() => {
+    volverRef.current?.focus();
+    const tecla = (e) => {
+      if (e.key === "Escape") onResponder(false);
+    };
+    document.addEventListener("keydown", tecla);
+    return () => document.removeEventListener("keydown", tecla);
+  }, [onResponder]);
+
+  return (
+    <div className="aviso-fondo" role="dialog" aria-modal="true" aria-labelledby="aviso-titulo">
+      <div className="aviso">
+        <h2 id="aviso-titulo">Productos sin existencia suficiente</h2>
+        <p>
+          {aviso.puedeConfirmar
+            ? "Si cobras igual, la existencia de estos productos queda en negativo. Revisa el conteo después."
+            : "La venta está bloqueada: estos productos no tienen existencia suficiente."}
+        </p>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th className="num">Hay</th>
+              <th className="num">Se venden</th>
+            </tr>
+          </thead>
+          <tbody>
+            {aviso.faltantes.map((f) => (
+              <tr key={f.id}>
+                <td>{f.nombre}</td>
+                <td className="num stock-low">{f.existencia}</td>
+                <td className="num">{f.cantidad}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="aviso-botones">
+          <button ref={volverRef} className="btn-secondary" onClick={() => onResponder(false)}>
+            Volver al carrito (Esc)
+          </button>
+          {aviso.puedeConfirmar && (
+            <button className="btn-refresh" onClick={() => onResponder(true)}>
+              Cobrar de todas formas
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Existencias en negativo: el admin anota lo que contó y se corrige el DBF
+function AdminNegativeStockScreen() {
+  const { datos, error, cargando, recargar } = useDatosPorFecha(apiService.getNegativeStock, null);
+  const [filtro, setFiltro] = useState("");
+  const [conteos, setConteos] = useState({});
+  const [corregidos, setCorregidos] = useState({});
+  const [guardando, setGuardando] = useState(null);
+
+  const productos = datos?.productos || [];
+  const texto = filtro.trim().toLowerCase();
+  const visibles = productos.filter(
+    (p) => !texto || p.nombre.toLowerCase().includes(texto) || (p.codigo || "").toLowerCase().includes(texto)
+  );
+  const pendientes = productos.filter((p) => corregidos[p.id] === undefined).length;
+
+  const guardar = async (producto) => {
+    const valor = conteos[producto.id];
+    if (valor === undefined || valor === "" || Number(valor) < 0) {
+      notify("error", "Escribe la cantidad contada (0 o más)");
+      return;
+    }
+    setGuardando(producto.id);
+    try {
+      const actualizado = await apiService.countProduct(producto.id, Number(valor));
+      setCorregidos((c) => ({ ...c, [producto.id]: actualizado.stock_actual }));
+      notify("ok", `${producto.nombre}: existencia ${actualizado.stock_actual}`);
+    } catch (err) {
+      notify("error", "No se pudo guardar el conteo: " + err.message);
+    } finally {
+      setGuardando(null);
+    }
+  };
+
+  return (
+    <div className="report-page">
+      <div className="report-card">
+        <div className="report-header">
+          <h2><Icon nombre="caja" />Existencias en negativo</h2>
+          <div className="report-toolbar">
+            <input
+              type="text"
+              placeholder="Filtrar por nombre o código..."
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+            />
+            <button
+              className="btn-refresh"
+              onClick={() => {
+                setCorregidos({});
+                setConteos({});
+                recargar();
+              }}
+              disabled={cargando}
+            >
+              {cargando ? "Cargando..." : "Actualizar"}
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="report-error">No se pudo cargar el reporte: {error}</p>}
+
+        {datos && (
+          <>
+            <div className="stat-grid">
+              <div className="stat">
+                <span>Productos en negativo</span>
+                <strong>{pendientes.toLocaleString("es-CR")}</strong>
+              </div>
+              <div className="stat">
+                <span>De un total de</span>
+                <strong>{datos.totalProductos.toLocaleString("es-CR")}</strong>
+              </div>
+              <div className="stat highlight">
+                <span>Unidades faltantes</span>
+                <strong>{datos.unidadesFaltantes.toLocaleString("es-CR")}</strong>
+              </div>
+            </div>
+            <p className="backup-info">
+              Cuenta lo que hay en el estante y escribe la cantidad real. Al guardar, la existencia
+              queda en ese número y el cambio se registra en la auditoría. Al vender sin existencia
+              el sistema {datos.modoVenta === "bloquear" ? "bloquea la venta" : datos.modoVenta === "permitir" ? "no avisa" : "pide confirmación"}.
+            </p>
+          </>
+        )}
+
+        {datos && !cargando && productos.length === 0 && (
+          <p className="report-empty">No hay productos con existencia negativa</p>
+        )}
+
+        {visibles.length > 0 && (
+          <div className="report-table-wrapper">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Producto</th>
+                  <th className="num">Existencia</th>
+                  <th className="num">Cantidad contada</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibles.slice(0, MAX_FILAS_PRODUCTOS).map((p) => {
+                  const corregido = corregidos[p.id];
+                  return (
+                    <tr key={p.id}>
+                      <td>{p.codigo || "—"}</td>
+                      <td>{p.nombre}</td>
+                      <td className={corregido === undefined ? "num stock-low" : "num"}>
+                        {corregido === undefined ? p.stock_actual : corregido}
+                      </td>
+                      <td className="num">
+                        {corregido === undefined && (
+                          <input
+                            className="input-conteo"
+                            aria-label={`Cantidad contada de ${p.nombre}`}
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={conteos[p.id] ?? ""}
+                            onChange={(e) => setConteos((c) => ({ ...c, [p.id]: e.target.value }))}
+                            onKeyDown={(e) => e.key === "Enter" && guardar(p)}
+                          />
+                        )}
+                      </td>
+                      <td>
+                        {corregido === undefined ? (
+                          <button
+                            className="btn-secondary"
+                            onClick={() => guardar(p)}
+                            disabled={guardando === p.id}
+                          >
+                            {guardando === p.id ? "Guardando..." : "Guardar"}
+                          </button>
+                        ) : (
+                          <span className="conteo-ok">Corregido</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {visibles.length > MAX_FILAS_PRODUCTOS && (
+          <p className="report-empty">
+            Mostrando {MAX_FILAS_PRODUCTOS} de {visibles.length.toLocaleString("es-CR")}; usa el filtro para ver otros.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ==========================================
 // COMPONENTE: Principal (POS)
 // ==========================================
@@ -1864,8 +2091,23 @@ function POSScreen({ onLogout }) {
     apiService.getMe().then(setUsuario).catch(() => setUsuario(null));
   }, []);
 
+  // Aviso de productos sin existencia: se espera la respuesta del cajero
+  const [aviso, setAviso] = useState(null);
+  const respuestaAviso = useRef(null);
+  const preguntarSinExistencia = (datos) =>
+    new Promise((resolve) => {
+      respuestaAviso.current = resolve;
+      setAviso({ faltantes: datos.faltantes || [], puedeConfirmar: !!datos.puedeConfirmar });
+    });
+  const responderAviso = useCallback((confirmar) => {
+    setAviso(null);
+    respuestaAviso.current?.(confirmar);
+    respuestaAviso.current = null;
+  }, []);
+
   const esAdmin = usuario?.rol === "admin";
-  const enInicio = view === "inicio";
+  // Con el aviso abierto, el lector y los atajos de Inicio quedan en pausa
+  const enInicio = view === "inicio" && !aviso;
 
   // F2 vuelve a Inicio (el buscador toma el cursor)
   useAtajo("F2", () => setView("inicio"));
@@ -1938,7 +2180,15 @@ function POSScreen({ onLogout }) {
         claveVenta: claveVenta.current
       };
 
-      const response = await apiService.createSale(saleData);
+      let response;
+      try {
+        response = await apiService.createSale(saleData);
+      } catch (error) {
+        if (error.datos?.codigo !== "SIN_EXISTENCIA") throw error;
+        const confirmar = await preguntarSinExistencia(error.datos);
+        if (!confirmar) return false;
+        response = await apiService.createSale({ ...saleData, confirmarSinExistencia: true });
+      }
 
       setLastSale(response);
       setCartItems([]); // Limpiar carrito
@@ -2010,6 +2260,8 @@ function POSScreen({ onLogout }) {
       {view === "password" && <ChangePasswordScreen />}
       {esAdmin && view === "admin-usuarios" && <AdminUsersScreen />}
       {esAdmin && view === "admin-inventario" && <AdminInventoryScreen />}
+      {esAdmin && view === "admin-negativos" && <AdminNegativeStockScreen />}
+      {aviso && <AvisoSinExistencia aviso={aviso} onResponder={responderAviso} />}
       {esAdmin && view === "admin-respaldos" && <AdminBackupsScreen />}
 
       {/* Inicio queda montado (oculto) para no perder el carrito al cambiar de vista */}

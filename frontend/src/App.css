@@ -1638,3 +1638,62 @@ h3 .icon {
 .customer-fields input:last-child {
   grid-column: 1 / -1;
 }
+
+/* ---- Existencias: aviso al cobrar y conteo de negativos ---- */
+.item-sin-stock {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #d32f2f;
+}
+
+.aviso-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(21, 21, 21, 0.45);
+}
+
+.aviso {
+  width: min(560px, 100%);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 26px;
+  border-radius: var(--radio);
+  background: var(--tarjeta);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.aviso h2 {
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+
+.aviso p {
+  color: var(--tinta-suave);
+  margin-bottom: 16px;
+}
+
+.aviso-botones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.input-conteo {
+  width: 96px;
+  padding: 6px 8px;
+  text-align: right;
+  border: 1px solid var(--linea-fuerte);
+  border-radius: 8px;
+}
+
+.conteo-ok {
+  color: #2e7d32;
+  font-weight: 600;
+}
