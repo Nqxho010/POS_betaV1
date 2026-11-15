@@ -1312,7 +1312,9 @@ function FormMessage({ mensaje }) {
 const LARGO_MINIMO_PASSWORD = 6;
 
 // Cualquier usuario cambia su propia contraseña
-function ChangePasswordScreen() {
+// obligatorio: la contraseña inicial o una que puso el admin, que hay que
+// cambiar antes de usar el POS. onCambiada se llama al terminar.
+function ChangePasswordScreen({ obligatorio = false, onCambiada, onSalir }) {
   const vacio = { actual: "", nueva: "", confirmar: "" };
   const [form, setForm] = useState(vacio);
   const [mensaje, setMensaje] = useState(null);
@@ -1329,9 +1331,12 @@ function ChangePasswordScreen() {
     setGuardando(true);
     setMensaje(null);
     try {
-      await apiService.changePassword(form.actual, form.nueva);
+      const respuesta = await apiService.changePassword(form.actual, form.nueva);
+      // Cambiar la contraseña cierra las sesiones anteriores: usar el token nuevo
+      if (respuesta?.token) apiService.setToken(respuesta.token);
       setMensaje({ ok: true, texto: "Contraseña cambiada" });
       setForm(vacio);
+      onCambiada?.();
     } catch (error) {
       setMensaje({ ok: false, texto: error.message });
     } finally {
@@ -1345,6 +1350,11 @@ function ChangePasswordScreen() {
         <div className="report-header">
           <h2><Icon nombre="usuario" />Cambiar mi contraseña</h2>
         </div>
+        {obligatorio && (
+          <p className="form-msg error">
+            Por seguridad, cambie la contraseña que le asignaron antes de usar el sistema.
+          </p>
+        )}
         <form className="admin-form" onSubmit={guardar}>
           <label>
             Contraseña actual
@@ -1383,6 +1393,11 @@ function ChangePasswordScreen() {
             {guardando ? "Guardando..." : "Cambiar contraseña"}
           </button>
           <FormMessage mensaje={mensaje} />
+          {onSalir && (
+            <button className="btn-logout" type="button" onClick={onSalir}>
+              Cerrar sesión
+            </button>
+          )}
         </form>
       </div>
     </div>
@@ -2356,6 +2371,19 @@ function POSScreen({ onLogout }) {
       setIsProcessing(false);
     }
   };
+
+  // Contraseña inicial o restablecida por el admin: primero hay que cambiarla
+  if (usuario?.debe_cambiar_password) {
+    return (
+      <div className="pos-container">
+        <ChangePasswordScreen
+          obligatorio
+          onSalir={onLogout}
+          onCambiada={() => apiService.getMe().then(setUsuario).catch(() => setUsuario(null))}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="pos-container">

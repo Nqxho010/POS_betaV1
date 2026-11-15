@@ -1,7 +1,7 @@
 {
   "name": "pos-costa-rica",
   "productName": "POS Costa Rica",
-  "version": "1.0.0-beta.4",
+  "version": "1.0.0-beta.5",
   "description": "Lusteph - punto de venta para Costa Rica",
   "author": "POS Costa Rica",
   "private": true,
@@ -12,9 +12,19 @@
     "build:frontend": "npm --prefix ../frontend run build",
     "dist": "npm run build:frontend && electron-builder --win"
   },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "iconv-lite": "^0.7.3",
+    "jsonwebtoken": "^9.0.3",
+    "mkdirp": "^3.0.1",
+    "sqlite3": "^6.0.1"
+  },
   "devDependencies": {
-    "electron": "^37.10.3",
-    "electron-builder": "^25.1.8"
+    "electron": "44.10.0",
+    "electron-builder": "26.18.1"
   },
   "build": {
     "appId": "cr.pos.costarica",
@@ -26,23 +36,25 @@
     "files": [
       "main.js",
       "preload.js",
-      "build/icon.png"
-    ],
-    "extraResources": [
+      "build/icon.png",
       {
         "from": "../backend",
         "to": "backend",
         "filter": [
           "package.json",
           "src/**/*",
-          "node_modules/**/*",
           "!src/.env",
-          "!**/*.p12"
+          "!**/*.p12",
+          "!node_modules/.bin"
         ]
       },
       {
         "from": "../frontend/build",
-        "to": "frontend"
+        "to": "frontend",
+        "filter": [
+          "**/*",
+          "!**/*.map"
+        ]
       }
     ],
     "win": {
@@ -54,6 +66,20 @@
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Lusteph POS",
       "artifactName": "Lusteph-POS-Setup-${version}.${ext}"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "loadBrowserProcessSpecificV8Snapshot": false,
+      "grantFileProtocolExtraPrivileges": false
     }
   }
 }

@@ -123,7 +123,12 @@ npm run dist
 
 El instalador queda en `desktop/dist/Lusteph-POS-Setup-<versión>.exe`.
 
-En el primer arranque la app crea su propio `.env` con claves únicas para esa instalación. La contraseña inicial del administrador está en ese archivo (`ADMIN_PASSWORD`); conviene cambiarla desde la app al ingresar.
+En el primer arranque la app crea su propio `.env` con claves únicas para esa instalación. La contraseña inicial del administrador está en ese archivo (`ADMIN_PASSWORD`); al ingresar por primera vez la app obliga a cambiarla. Lo mismo pasa cuando el admin le restablece la contraseña a otro usuario.
+
+### Seguridad del instalador
+
+- El backend y el frontend van dentro de `app.asar`, con verificación de integridad y los *fuses* de Electron cerrados (sin `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` ni `--inspect`). Ver `build.electronFuses` en `desktop/package.json`.
+- **Firma de código:** sin firmar, Windows SmartScreen muestra "editor desconocido". Para firmar, definir antes de `npm run dist` las variables `CSC_LINK` (ruta o base64 del certificado `.pfx`) y `CSC_KEY_PASSWORD`; electron-builder firma el instalador y el ejecutable automáticamente.
 
 Si `npm run dist` falla por permisos al crear enlaces simbólicos, hay que activar el "Modo de desarrollador" de Windows o ejecutar la terminal como administrador.
 
@@ -134,6 +139,7 @@ Si `npm run dist` falla por permisos al crear enlaces simbólicos, hay que activ
 | `PORT` | Puerto del backend (5000 por defecto) |
 | `JWT_SECRET` | Clave para firmar las sesiones; debe ser única por instalación |
 | `ADMIN_PASSWORD` | Contraseña del `admin` que se crea en el primer arranque |
+| `CORS_ORIGINS` | Orígenes que pueden llamar a la API desde otra página, separados por coma. Vacío: `http://localhost:3000` en desarrollo y ninguno en producción |
 | `DATA_DIR` | Carpeta de datos del negocio; vacío usa `backend/` |
 | `BACKUP_DIR` | Carpeta de respaldos; lo ideal es otro disco o una USB |
 | `VENTA_SIN_EXISTENCIA` | `avisar` (por defecto, el cajero confirma), `bloquear` o `permitir` |
