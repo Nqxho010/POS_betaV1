@@ -5,13 +5,14 @@
 // ventana. Los datos del cliente viven en su carpeta de usuario, fuera del
 // programa instalado.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
-// Instalada, backend y frontend vienen en resources/; en desarrollo, del repo
-const RAIZ = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
+// Instalada, backend y frontend vienen dentro de app.asar (protegido por la
+// verificación de integridad); en desarrollo, del repo
+const RAIZ = app.isPackaged ? __dirname : path.join(__dirname, "..");
 const BACKEND_DIR = path.join(RAIZ, "backend");
 const FRONTEND_DIR = app.isPackaged
   ? path.join(RAIZ, "frontend")
@@ -106,12 +107,27 @@ async function iniciarBackend() {
   process.env.FRONTEND_DIR = FRONTEND_DIR;
   process.env.HOST = "127.0.0.1";
   process.env.PORT = "0"; // puerto libre elegido por el sistema
+  // Instalada: errores sin detalles internos y sin CORS (misma página y API)
+  if (app.isPackaged) {
+    process.env.NODE_ENV = "production";
+    process.env.CORS_ORIGINS = "";
+  }
 
-  require(path.join(BACKEND_DIR, "node_modules", "dotenv")).config({ path: ENV_PATH, quiet: true });
+  // dotenv y el resto de dependencias del backend vienen con la app (desktop/package.json)
+  require("dotenv").config({ path: ENV_PATH, quiet: true });
 
   const { iniciar } = require(path.join(BACKEND_DIR, "src", "app.js"));
   const servidor = await iniciar();
   return servidor.address().port;
+}
+
+// Solo páginas web normales: nada de file:, javascript:, ms-settings:, etc.
+function esEnlaceExterno(url) {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function alternarPantallaCompleta() {
@@ -132,6 +148,8 @@ function crearVentana(puerto) {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
       // El aviso sonoro del lector no debe esperar un clic previo
       autoplayPolicy: "no-user-gesture-required"
     }
@@ -151,11 +169,19 @@ function crearVentana(puerto) {
     }
   });
 
-  // Los enlaces externos se abren en el navegador, no dentro del POS
+  // Los enlaces externos (solo https) se abren en el navegador, no dentro del POS
   ventana.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (esEnlaceExterno(url)) shell.openExternal(url);
     return { action: "deny" };
   });
+  // La ventana nunca sale del POS local
+  const origen = `http://127.0.0.1:${puerto}`;
+  ventana.webContents.on("will-navigate", (event, url) => {
+    if (new URL(url).origin === origen) return;
+    event.preventDefault();
+    if (esEnlaceExterno(url)) shell.openExternal(url);
+  });
+  ventana.webContents.on("will-attach-webview", (event) => event.preventDefault());
 
   ventana.on("closed", () => {
     ventana = null;
@@ -181,8 +207,21 @@ async function avisarSiFaltaInventario() {
 }
 
 // Acciones que la página pide a través de preload.js
-ipcMain.handle("pos:abrir-carpeta-datos", () => shell.openPath(DATA_DIR));
-ipcMain.handle("pos:pantalla-completa", () => alternarPantallaCompleta());
+// Solo las atiende si las pide la página del POS (no otro contenido)
+const desdeElPOS = (event) => {
+  try {
+    const { hostname, protocol } = new URL(event.senderFrame.url);
+    return protocol === "http:" && hostname === "127.0.0.1" && event.sender === ventana?.webContents;
+  } catch {
+    return false;
+  }
+};
+ipcMain.handle("pos:abrir-carpeta-datos", (event) => {
+  if (desdeElPOS(event)) return shell.openPath(DATA_DIR);
+});
+ipcMain.handle("pos:pantalla-completa", (event) => {
+  if (desdeElPOS(event)) alternarPantallaCompleta();
+});
 
 // Dos copias abiertas escribirían a la vez en las mismas bases y en el DBF
 if (!app.requestSingleInstanceLock()) {
@@ -197,6 +236,8 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     // Sin la barra de menú del navegador: todo se maneja desde la propia app
     Menu.setApplicationMenu(null);
+    // La página no necesita cámara, micrófono, ubicación ni notificaciones
+    session.defaultSession.setPermissionRequestHandler((_contenido, _permiso, responder) => responder(false));
     const carga = mostrarPantallaCarga();
     try {
       prepararDatos();

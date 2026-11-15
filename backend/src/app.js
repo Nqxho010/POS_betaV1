@@ -74,9 +74,53 @@ const BACKUP_DIR = process.env.BACKUP_DIR
   : path.join(DATA_DIR, "respaldos");
 const MAX_RESPALDOS = 30;
 
+// Límites de los datos que llegan en una venta
+const MAX_CANTIDAD = 100000;
+const DECIMALES_CANTIDAD = 3;
+const MAX_MONTO = 100000000; // ₡100 millones
+const LARGO_MAXIMO_NOTAS = 500;
+const LARGO_MAXIMO_CLIENTE_ID = 50;
+
 // Middleware
-app.use(express.json());
-app.use(cors());
+app.disable("x-powered-by");
+
+// Solo escuchando en la propia PC: rechazar peticiones con otro Host. Evita
+// que una página web use DNS rebinding para hablar con el POS.
+const SOLO_LOCAL = ["127.0.0.1", "localhost", "::1"].includes(HOST);
+if (SOLO_LOCAL) {
+  app.use((req, res, next) => {
+    const host = String(req.headers.host || "").toLowerCase().replace(/:\d+$/, "");
+    if (["127.0.0.1", "localhost", "[::1]"].includes(host)) return next();
+    res.status(421).json({ error: "Host no permitido" });
+  });
+}
+
+// Cabeceras de seguridad para la página y la API
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+      "connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+  );
+  next();
+});
+
+// CORS solo para los orígenes de CORS_ORIGINS (separados por coma). La app de
+// escritorio sirve la página desde el mismo origen y no lo necesita; en
+// desarrollo se permite el servidor de React (http://localhost:3000).
+const ORIGENES_CORS = (process.env.CORS_ORIGINS ||
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3000"))
+  .split(",")
+  .map((origen) => origen.trim())
+  .filter(Boolean);
+if (ORIGENES_CORS.length > 0) {
+  app.use(cors({ origin: ORIGENES_CORS }));
+}
+
+app.use(express.json({ limit: "100kb" }));
 
 // App de escritorio: el backend también sirve el frontend compilado
 if (process.env.FRONTEND_DIR) {
@@ -149,12 +193,27 @@ async function initializeDatabase() {
     )
   `);
 
-  // Administrador inicial: su contraseña sale de ADMIN_PASSWORD en el .env
+  // sesion_version: sube al cambiar la contraseña y deja sin efecto los tokens
+  // anteriores. debe_cambiar_password: obliga a cambiar la clave inicial.
+  const columnasUsuarios = (await dbAll(db, `PRAGMA table_info(usuarios)`)).map((c) => c.name);
+  for (const [nombre, tipo] of [["sesion_version", "INTEGER DEFAULT 0"], ["debe_cambiar_password", "INTEGER DEFAULT 0"]]) {
+    if (!columnasUsuarios.includes(nombre)) {
+      await dbRun(db, `ALTER TABLE usuarios ADD COLUMN ${nombre} ${tipo}`);
+    }
+  }
+
+  // Administrador inicial: su contraseña sale de ADMIN_PASSWORD en el .env y
+  // queda escrita en ese archivo, así que se pide cambiarla al entrar
   if (process.env.ADMIN_PASSWORD) {
     await dbRun(db, `
-      INSERT OR IGNORE INTO usuarios (username, password_hash, email, rol)
-      VALUES ('admin', ?, 'admin@pos.cr', 'admin')
+      INSERT OR IGNORE INTO usuarios (username, password_hash, email, rol, debe_cambiar_password)
+      VALUES ('admin', ?, 'admin@pos.cr', 'admin', 1)
     `, [bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10)]);
+    // Instalaciones anteriores: si el admin aún usa la clave del .env, también
+    const admin = await dbGet(db, `SELECT id, password_hash FROM usuarios WHERE username = 'admin'`);
+    if (admin && bcrypt.compareSync(process.env.ADMIN_PASSWORD, admin.password_hash)) {
+      await dbRun(db, `UPDATE usuarios SET debe_cambiar_password = 1 WHERE id = ?`, [admin.id]);
+    }
   } else {
     console.warn("⚠️ ADMIN_PASSWORD no está en el .env: no se crea el usuario admin");
   }
@@ -436,20 +495,24 @@ const userService = {
     });
   },
 
-  updatePassword: (id, password) =>
+  // Cambiar la contraseña cierra las sesiones abiertas de ese usuario.
+  // debeCambiar: 1 cuando la pone el admin (el usuario la cambia al entrar)
+  updatePassword: (id, password, debeCambiar = 0) =>
     dbRun(
       db,
-      `UPDATE usuarios SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [bcrypt.hashSync(password, 10), id]
+      `UPDATE usuarios SET password_hash = ?, sesion_version = COALESCE(sesion_version, 0) + 1,
+              debe_cambiar_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [bcrypt.hashSync(password, 10), debeCambiar, id]
     ),
 
   verifyPassword: (password, hash) => {
+    if (typeof password !== "string" || typeof hash !== "string") return false;
     return bcrypt.compareSync(password, hash);
   },
 
   getUserById: (id) => {
     return new Promise((resolve, reject) => {
-      db.get(`SELECT id, username, email, rol FROM usuarios WHERE id = ?`, [id], (err, row) => {
+      db.get(`SELECT id, username, email, rol, debe_cambiar_password FROM usuarios WHERE id = ?`, [id], (err, row) => {
         if (err) reject(err);
         else resolve(row);
       });
@@ -489,6 +552,15 @@ const salesService = {
     if (!METODOS_PAGO.includes(medioPago)) {
       throw errorDeDatos("Método de pago inválido");
     }
+    if (notas != null && (typeof notas !== "string" || notas.length > LARGO_MAXIMO_NOTAS)) {
+      throw errorDeDatos(`Las notas deben ser texto de hasta ${LARGO_MAXIMO_NOTAS} caracteres`);
+    }
+    if (clientId != null && (typeof clientId !== "string" || clientId.length > LARGO_MAXIMO_CLIENTE_ID)) {
+      throw errorDeDatos("Identificador de cliente inválido");
+    }
+    if (claveVenta != null && (typeof claveVenta !== "string" || claveVenta.length > 100)) {
+      throw errorDeDatos("Clave de venta inválida");
+    }
 
     // Reintento de una venta que ya se registró (se perdió la respuesta): no duplicarla
     if (claveVenta) {
@@ -502,7 +574,12 @@ const salesService = {
 
     for (const item of items) {
       const cantidad = Number(item.cantidad);
-      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      // Hasta 3 decimales (productos por peso) y un máximo razonable
+      const factor = 10 ** DECIMALES_CANTIDAD;
+      if (
+        !Number.isFinite(cantidad) || cantidad <= 0 || cantidad > MAX_CANTIDAD ||
+        Math.abs(Math.round(cantidad * factor) - cantidad * factor) > 1e-6
+      ) {
         throw errorDeDatos(`Cantidad inválida para el producto ${item.productId}`);
       }
 
@@ -512,6 +589,10 @@ const salesService = {
       // El cliente paga precio final x cantidad; el desglose de impuesto se
       // saca de ese total para que siempre sumen exacto
       const itemTotal = redondear(producto.total * cantidad);
+      // Una cantidad tan pequeña que el total queda en ₡0 sería una venta regalada
+      if (producto.total > 0 && itemTotal <= 0) {
+        throw errorDeDatos(`La cantidad de ${producto.nombre} es demasiado pequeña`);
+      }
       const itemSubtotal = redondear(itemTotal / (1 + producto.impuesto_venta / 100));
       const itemIva = redondear(itemTotal - itemSubtotal);
       subtotal += itemSubtotal;
@@ -533,9 +614,15 @@ const salesService = {
     totalIva = redondear(totalIva);
     const totalVenta = redondear(subtotal + totalIva);
 
+    if (totalVenta > MAX_MONTO) {
+      throw errorDeDatos("El total de la venta supera el máximo permitido");
+    }
     const recibido = medioPago === "cash" ? redondear(montoRecibido) : totalVenta;
     if (!(recibido >= totalVenta)) {
       throw errorDeDatos("Monto recibido insuficiente");
+    }
+    if (recibido > MAX_MONTO) {
+      throw errorDeDatos("El monto recibido no es válido");
     }
     const vuelto = redondear(recibido - totalVenta);
     const numeroVenta = `VENTA-${Date.now()}`;
@@ -714,33 +801,101 @@ const reportService = {
 // ==========================================
 
 // Autenticación JWT
-const authMiddleware = (req, res, next) => {
+// El rol y el estado se leen de la BD en cada petición: un usuario desactivado
+// o con la contraseña cambiada pierde sus sesiones al instante
+const firmarToken = (usuario) =>
+  jwt.sign(
+    { usuarioId: usuario.id, username: usuario.username, sv: usuario.sesion_version || 0 },
+    JWT_SECRET,
+    { algorithm: "HS256", expiresIn: "8h" }
+  );
+
+// Rutas que puede usar quien todavía debe cambiar la contraseña inicial
+const RUTAS_SIN_CAMBIO_PASSWORD = ["/api/auth/me", "/api/auth/password"];
+
+const authMiddleware = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No autorizado" });
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.usuarioId = decoded.usuarioId;
-    req.username = decoded.username;
-    req.rol = decoded.rol;
+    decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+  } catch {
+    return res.status(401).json({ error: "Token inválido" });
+  }
+
+  try {
+    const usuario = await dbGet(
+      db,
+      `SELECT id, username, rol, activo, sesion_version, debe_cambiar_password FROM usuarios WHERE id = ?`,
+      [decoded.usuarioId]
+    );
+    if (!usuario || !usuario.activo || (usuario.sesion_version || 0) !== decoded.sv) {
+      return res.status(401).json({ error: "La sesión ya no es válida. Inicie sesión de nuevo" });
+    }
+    if (usuario.debe_cambiar_password && !RUTAS_SIN_CAMBIO_PASSWORD.includes(req.originalUrl.split("?")[0])) {
+      return res.status(403).json({ error: "Debe cambiar su contraseña antes de continuar", codigo: "CAMBIAR_PASSWORD" });
+    }
+    req.usuarioId = usuario.id;
+    req.username = usuario.username;
+    req.rol = usuario.rol;
     next();
   } catch (error) {
-    res.status(401).json({ error: "Token inválido" });
+    responderError(res, error);
   }
 };
+
+// Respuesta de error: los de datos (4xx) se explican; los internos se
+// registran y al cliente le llega un mensaje genérico
+function responderError(res, error) {
+  const status = error.status || error.statusCode || 500;
+  if (status >= 500 && !error.publico) {
+    console.error("❌", error);
+    return res.status(status).json({ error: "Error interno del servidor" });
+  }
+  res.status(status).json({ error: error.message, ...error.datos });
+}
 
 // ==========================================
 // 6. RUTAS API
 // ==========================================
 
-// Bloqueo por intentos fallidos: varios seguidos bloquean ese usuario un rato
+// Bloqueo por intentos fallidos: varios seguidos bloquean ese usuario un rato,
+// y muchos desde la misma IP bloquean esa IP (aunque cambie de usuario)
 const MAX_INTENTOS_LOGIN = 5;
+const MAX_INTENTOS_IP = 20;
 const BLOQUEO_LOGIN_MS = 5 * 60 * 1000;
-const intentosLogin = new Map(); // usuario -> { fallos, bloqueadoHasta }
+const MAX_REGISTROS_INTENTOS = 1000;
+const intentosLogin = new Map(); // usuario -> { fallos, bloqueadoHasta, ultimo }
+const intentosIp = new Map(); // ip -> { fallos, desde }
+
+// Quita lo vencido y, si aún sobra, los registros más viejos que no estén
+// bloqueados: un bloqueo vigente nunca se borra para hacer espacio
+function podarIntentos() {
+  const ahora = Date.now();
+  for (const [clave, dato] of intentosLogin) {
+    if (dato.bloqueadoHasta <= ahora && ahora - dato.ultimo > BLOQUEO_LOGIN_MS) intentosLogin.delete(clave);
+  }
+  for (const [ip, dato] of intentosIp) {
+    if (ahora - dato.desde > BLOQUEO_LOGIN_MS) intentosIp.delete(ip);
+  }
+  for (const [clave, dato] of intentosLogin) {
+    if (intentosLogin.size <= MAX_REGISTROS_INTENTOS) break;
+    if (dato.bloqueadoHasta <= ahora) intentosLogin.delete(clave);
+  }
+}
+
+const textoMinutos = (ms) => {
+  const minutos = Math.ceil(ms / 60000);
+  return `${minutos} minuto${minutos === 1 ? "" : "s"}`;
+};
 
 function validarPassword(password) {
   if (typeof password !== "string" || password.length < LARGO_MINIMO_PASSWORD) {
     throw errorDeDatos(`La contraseña debe tener al menos ${LARGO_MINIMO_PASSWORD} caracteres`);
+  }
+  if (password.length > 200) {
+    throw errorDeDatos("La contraseña es demasiado larga");
   }
 }
 
@@ -748,18 +903,26 @@ function validarPassword(password) {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { password } = req.body || {};
-    const username = String(req.body?.username ?? "").trim();
+    const username = String(req.body?.username ?? "").trim().slice(0, 100);
 
-    if (!username || !password) {
+    if (!username || typeof password !== "string" || !password) {
       return res.status(400).json({ error: "Usuario y contraseña requeridos" });
     }
 
-    const clave = username.toLowerCase();
-    const intentos = intentosLogin.get(clave) || { fallos: 0, bloqueadoHasta: 0 };
-    if (intentos.bloqueadoHasta > Date.now()) {
-      const minutos = Math.ceil((intentos.bloqueadoHasta - Date.now()) / 60000);
+    const ahora = Date.now();
+    const ip = req.socket.remoteAddress || "?";
+    const porIp = intentosIp.get(ip);
+    if (porIp && porIp.fallos >= MAX_INTENTOS_IP && ahora - porIp.desde < BLOQUEO_LOGIN_MS) {
       return res.status(429).json({
-        error: `Demasiados intentos fallidos. Intente de nuevo en ${minutos} minuto${minutos === 1 ? "" : "s"}`
+        error: `Demasiados intentos fallidos. Intente de nuevo en ${textoMinutos(porIp.desde + BLOQUEO_LOGIN_MS - ahora)}`
+      });
+    }
+
+    const clave = username.toLowerCase();
+    const intentos = intentosLogin.get(clave) || { fallos: 0, bloqueadoHasta: 0, ultimo: 0 };
+    if (intentos.bloqueadoHasta > ahora) {
+      return res.status(429).json({
+        error: `Demasiados intentos fallidos. Intente de nuevo en ${textoMinutos(intentos.bloqueadoHasta - ahora)}`
       });
     }
 
@@ -768,24 +931,26 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (!valido) {
       intentos.fallos += 1;
+      intentos.ultimo = ahora;
       if (intentos.fallos >= MAX_INTENTOS_LOGIN) {
         intentos.fallos = 0;
-        intentos.bloqueadoHasta = Date.now() + BLOQUEO_LOGIN_MS;
+        intentos.bloqueadoHasta = ahora + BLOQUEO_LOGIN_MS;
         await registrarAuditoria(usuario ? usuario.id : null, "LOGIN_BLOQUEADO", null, null, null, { username });
       }
-      if (intentosLogin.size > 1000) intentosLogin.clear();
       intentosLogin.set(clave, intentos);
+
+      const datoIp = porIp && ahora - porIp.desde < BLOQUEO_LOGIN_MS ? porIp : { fallos: 0, desde: ahora };
+      datoIp.fallos += 1;
+      intentosIp.set(ip, datoIp);
+
+      if (intentosLogin.size > MAX_REGISTROS_INTENTOS || intentosIp.size > MAX_REGISTROS_INTENTOS) podarIntentos();
       // El mismo mensaje exista o no el usuario, para no revelar cuáles existen
       return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
     }
 
     intentosLogin.delete(clave);
 
-    const token = jwt.sign(
-      { usuarioId: usuario.id, username: usuario.username, rol: usuario.rol },
-      JWT_SECRET,
-      { expiresIn: "8h" }
-    );
+    const token = firmarToken(usuario);
 
     await registrarAuditoria(usuario.id, "LOGIN", null, null, null, { username });
 
@@ -795,15 +960,16 @@ app.post("/api/auth/login", async (req, res) => {
         id: usuario.id,
         username: usuario.username,
         email: usuario.email,
-        rol: usuario.rol
+        rol: usuario.rol,
+        debe_cambiar_password: usuario.debe_cambiar_password ? 1 : 0
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
-// AUTH: Cambiar mi contraseña
+// AUTH: Cambiar mi contraseña. Cierra las demás sesiones y devuelve un token nuevo
 app.post("/api/auth/password", authMiddleware, async (req, res) => {
   try {
     const { actual, nueva } = req.body || {};
@@ -812,16 +978,21 @@ app.post("/api/auth/password", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "La contraseña actual no es correcta" });
     }
     validarPassword(nueva);
+    if (nueva === actual) {
+      return res.status(400).json({ error: "La contraseña nueva debe ser distinta de la actual" });
+    }
 
     await userService.updatePassword(usuario.id, nueva);
     await registrarAuditoria(usuario.id, "PASSWORD_CAMBIADA", "usuarios", usuario.id, null, null);
-    res.json({ ok: true });
+    const actualizado = await userService.getUserByUsername(req.username);
+    res.json({ ok: true, token: firmarToken(actualizado) });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
-// Restablecer la contraseña de otro usuario (solo admin)
+// Restablecer la contraseña de otro usuario (solo admin). El usuario deberá
+// cambiarla al entrar, así solo él conoce su clave definitiva
 app.post("/api/users/:id/password", authMiddleware, async (req, res) => {
   try {
     if (req.rol !== "admin") {
@@ -831,14 +1002,14 @@ app.post("/api/users/:id/password", authMiddleware, async (req, res) => {
     if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
     validarPassword(req.body?.nueva);
 
-    await userService.updatePassword(usuario.id, req.body.nueva);
+    await userService.updatePassword(usuario.id, req.body.nueva, usuario.id === req.usuarioId ? 0 : 1);
     intentosLogin.delete(usuario.username.toLowerCase());
     await registrarAuditoria(req.usuarioId, "PASSWORD_RESTABLECIDA", "usuarios", usuario.id, null, {
       username: usuario.username
     });
     res.json({ ok: true });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -870,7 +1041,7 @@ app.post("/api/auth/register", authMiddleware, async (req, res) => {
 
     res.status(201).json(usuario);
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -880,7 +1051,7 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
     const usuario = await userService.getUserById(req.usuarioId);
     res.json(usuario);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -890,7 +1061,7 @@ app.get("/api/products", authMiddleware, async (req, res) => {
     const productos = productService.getAllProducts();
     res.json(productos);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -901,7 +1072,7 @@ app.get("/api/products/search", authMiddleware, async (req, res) => {
     const productos = productService.searchProducts(q);
     res.json(productos);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -916,7 +1087,7 @@ app.post("/api/products", authMiddleware, async (req, res) => {
 
     res.status(201).json(producto);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -977,7 +1148,7 @@ app.post("/api/products/:id/stock", authMiddleware, async (req, res) => {
 
     res.json(producto);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1007,7 +1178,7 @@ app.post("/api/products/:id/count", authMiddleware, async (req, res) => {
 
     res.json(producto);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1034,7 +1205,7 @@ app.post("/api/sales", authMiddleware, async (req, res) => {
       tiquete: armarTiquete(venta)
     });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message, ...error.datos });
+    responderError(res, error);
   }
 });
 
@@ -1058,7 +1229,7 @@ app.get("/api/sales", authMiddleware, async (req, res) => {
   try {
     res.json(await ventasVisibles(req));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1068,7 +1239,7 @@ app.get("/api/sales/:id", authMiddleware, async (req, res) => {
     if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
     res.json(venta);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1079,7 +1250,7 @@ app.get("/api/sales/:id/ticket", authMiddleware, async (req, res) => {
     if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
     res.json(armarTiquete(venta));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1120,7 +1291,7 @@ app.get("/api/admin/backups", authMiddleware, async (req, res) => {
     }
     res.json({ carpeta: BACKUP_DIR, maximo: MAX_RESPALDOS, respaldos: listarRespaldos(BACKUP_DIR) });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1133,7 +1304,7 @@ app.post("/api/admin/backups", authMiddleware, async (req, res) => {
     await registrarAuditoria(req.usuarioId, "RESPALDO_CREADO", null, null, null, respaldo);
     res.status(201).json(respaldo);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1145,7 +1316,7 @@ app.get("/api/users", authMiddleware, async (req, res) => {
     }
     res.json(await dbAll(db, `SELECT id, username, rol FROM usuarios WHERE activo = 1 ORDER BY username`));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1201,7 +1372,7 @@ app.get("/api/reports/cash-closing", authMiddleware, async (req, res) => {
 
     res.json(cierre);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1231,7 +1402,7 @@ app.get("/api/reports/negative-stock", authMiddleware, async (req, res) => {
       }))
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1261,10 +1432,15 @@ async function estadoLicencia() {
       datos = null; // código de otra computadora o alterado: como si no hubiera
     }
   }
-  const primerUso = Number(await leerSistema("primer_uso")) || ahora;
-  const maxVisto = Number(await leerSistema("max_visto")) || 0;
+  const { primerUso, maxVisto } = licencia.marcasDeTiempo({
+    primerUso: Number(await leerSistema("primer_uso")) || ahora,
+    maxVisto: Number(await leerSistema("max_visto")) || 0
+  });
   const estado = licencia.evaluar({ licencia: datos, primerUso, maxVisto, ahora });
-  if (estado.estado !== "reloj" && ahora > maxVisto) await guardarSistema("max_visto", ahora);
+  if (estado.estado !== "reloj" && ahora > maxVisto) {
+    await guardarSistema("max_visto", ahora);
+    licencia.guardarMaxVisto(ahora);
+  }
   return estado;
 }
 
@@ -1272,7 +1448,7 @@ app.get("/api/license", authMiddleware, async (req, res) => {
   try {
     res.json(await estadoLicencia());
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1292,7 +1468,10 @@ app.post("/api/license", authMiddleware, async (req, res) => {
     await guardarSistema("licencia", String(req.body.codigo).replace(/\s+/g, ""));
     // Solo un código emitido con --reiniciar-reloj quita el bloqueo por fecha
     // (por ejemplo, si alguien adelantó el reloj por error)
-    if (datos.reiniciaReloj) await guardarSistema("max_visto", Date.now());
+    if (datos.reiniciaReloj) {
+      await guardarSistema("max_visto", Date.now());
+      licencia.reiniciarMaxVisto(Date.now());
+    }
 
     await registrarAuditoria(req.usuarioId, "LICENCIA_ACTIVADA", "sistema", null, null, {
       cliente: datos.cliente,
@@ -1301,7 +1480,7 @@ app.post("/api/license", authMiddleware, async (req, res) => {
     });
     res.json(await estadoLicencia());
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    responderError(res, error);
   }
 });
 
@@ -1313,6 +1492,25 @@ app.get("/health", (req, res) => {
     timestamp: new Date(),
     version: "1.0.0-beta"
   });
+});
+
+// Rutas de API que no existen
+app.use("/api", (req, res) => res.status(404).json({ error: "Ruta no encontrada" }));
+
+// Errores que no atrapó ninguna ruta (JSON mal formado, cuerpo muy grande...):
+// sin stack ni rutas internas en la respuesta
+// eslint-disable-next-line no-unused-vars
+app.use((error, req, res, next) => {
+  if (error.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "El cuerpo de la petición no es JSON válido" });
+  }
+  if (error.type === "entity.too.large") {
+    return res.status(413).json({ error: "La petición es demasiado grande" });
+  }
+  if ((error.status || error.statusCode) < 500) {
+    return res.status(error.status || error.statusCode).json({ error: "Petición inválida" });
+  }
+  responderError(res, error);
 });
 
 // ==========================================

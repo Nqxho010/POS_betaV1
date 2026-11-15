@@ -75,6 +75,66 @@ function idEquipo() {
   return equipoCache;
 }
 
+// Copia del primer arranque y de la fecha más reciente vista en el registro de
+// Windows del usuario. Así borrar pos.db no reinicia el período de prueba ni
+// quita el bloqueo por reloj atrasado.
+const CLAVE_REGISTRO = process.env.LUSTEPH_REG_KEY || "HKCU\\Software\\Lusteph";
+const registroCache = new Map();
+
+function leerRegistro(nombre) {
+  if (process.platform !== "win32") return null;
+  if (registroCache.has(nombre)) return registroCache.get(nombre);
+  let valor = null;
+  try {
+    const salida = execFileSync("reg", ["query", CLAVE_REGISTRO, "/v", nombre], {
+      encoding: "utf8",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    const encontrado = salida.match(new RegExp(`${nombre}\\s+REG_SZ\\s+(\\S+)`));
+    valor = encontrado ? Number(encontrado[1]) || null : null;
+  } catch {
+    valor = null; // la clave aún no existe
+  }
+  registroCache.set(nombre, valor);
+  return valor;
+}
+
+function guardarRegistro(nombre, valor) {
+  if (process.platform !== "win32" || registroCache.get(nombre) === valor) return;
+  try {
+    execFileSync("reg", ["add", CLAVE_REGISTRO, "/v", nombre, "/t", "REG_SZ", "/d", String(valor), "/f"], {
+      windowsHide: true,
+      stdio: "ignore"
+    });
+    registroCache.set(nombre, valor);
+  } catch {
+    // Sin acceso al registro se sigue con lo que hay en la BD
+  }
+}
+
+// Une lo guardado en la BD con la copia del registro: el primer uso más
+// antiguo y la fecha más reciente que se haya visto
+function marcasDeTiempo({ primerUso, maxVisto }) {
+  const primerUsoRegistro = leerRegistro("PrimerUso");
+  const maxVistoRegistro = leerRegistro("MaxVisto");
+  const primero = Math.min(...[primerUso, primerUsoRegistro].filter(Boolean));
+  const maximo = Math.max(maxVisto || 0, maxVistoRegistro || 0);
+  if (Number.isFinite(primero) && primero !== primerUsoRegistro) guardarRegistro("PrimerUso", primero);
+  return { primerUso: Number.isFinite(primero) ? primero : primerUso, maxVisto: maximo };
+}
+
+// Solo se escribe al registro si avanzó más de una hora, para no hacerlo en cada venta
+function guardarMaxVisto(valor) {
+  const anterior = leerRegistro("MaxVisto") || 0;
+  if (valor - anterior > 60 * 60 * 1000) guardarRegistro("MaxVisto", valor);
+}
+
+// Un código con --reiniciar-reloj también reinicia la copia del registro
+function reiniciarMaxVisto(valor) {
+  guardarRegistro("MaxVisto", valor);
+}
+
 // Verifica firma y equipo. Devuelve { cliente, equipo, vence, emitida } o lanza
 // un Error con un mensaje para el usuario.
 function leerCodigo(codigo, equipo = idEquipo()) {
@@ -192,4 +252,12 @@ function evaluar({ licencia, primerUso, maxVisto, ahora }) {
   };
 }
 
-module.exports = { idEquipo, leerCodigo, evaluar, TOLERANCIA_RELOJ_MS };
+module.exports = {
+  idEquipo,
+  leerCodigo,
+  evaluar,
+  marcasDeTiempo,
+  guardarMaxVisto,
+  reiniciarMaxVisto,
+  TOLERANCIA_RELOJ_MS
+};

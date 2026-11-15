@@ -13,6 +13,23 @@ const MAX_RESULTADOS = 50;
 
 const redondear = (valor) => Math.round(valor * 100) / 100;
 
+// Datos inválidos que mandó el usuario: el servidor responde 400
+function errorDeDatos(mensaje) {
+  const error = new Error(mensaje);
+  error.status = 400;
+  return error;
+}
+
+// Falta el archivo de productos: se informa tal cual (503) para que el
+// encargado sepa qué hacer
+function errorPublico(mensaje) {
+  const error = new Error(mensaje);
+  error.status = 503;
+  error.publico = true;
+  return error;
+}
+const errorSinArchivo = (ruta) => errorPublico(`No se encontró el archivo de productos: ${ruta}`);
+
 class InventarioDBF {
   constructor(ruta) {
     this.ruta = ruta;
@@ -25,7 +42,7 @@ class InventarioDBF {
   // (CODIGO se repite en el DBF, así que no sirve como identificador).
   cargar() {
     if (!fs.existsSync(this.ruta)) {
-      throw new Error(`No se encontró el archivo de productos: ${this.ruta}`);
+      throw errorSinArchivo(this.ruta);
     }
 
     const buf = fs.readFileSync(this.ruta);
@@ -47,7 +64,7 @@ class InventarioDBF {
 
     const faltantes = CAMPOS_REQUERIDOS.filter((c) => !this.campos[c]);
     if (faltantes.length > 0) {
-      throw new Error(`${this.ruta} no tiene los campos: ${faltantes.join(", ")}`);
+      throw errorPublico(`${this.ruta} no tiene los campos: ${faltantes.join(", ")}`);
     }
 
     const texto = (inicio, campo) => {
@@ -118,7 +135,7 @@ class InventarioDBF {
   // Recarga si el DBF fue reemplazado o modificado por otro programa
   _sincronizar() {
     if (!fs.existsSync(this.ruta)) {
-      throw new Error(`No se encontró el archivo de productos: ${this.ruta}`);
+      throw errorSinArchivo(this.ruta);
     }
     if (this.firma !== this._firmaArchivo()) this.cargar();
   }
@@ -163,7 +180,7 @@ class InventarioDBF {
     const nuevos = new Map();
     for (const { id, cantidad } of lineas) {
       const producto = this.porId.get(Number(id));
-      if (!producto) throw new Error(`Producto ${id} no encontrado`);
+      if (!producto) throw errorDeDatos(`Producto ${id} no encontrado`);
       const actual = nuevos.has(producto) ? nuevos.get(producto) : producto.stock_actual;
       nuevos.set(producto, redondear(actual - cantidad));
     }
@@ -182,7 +199,7 @@ class InventarioDBF {
   ajustarStock(id, cantidad) {
     this._sincronizar();
     const producto = this.porId.get(Number(id));
-    if (!producto) throw new Error(`Producto ${id} no encontrado`);
+    if (!producto) throw errorDeDatos(`Producto ${id} no encontrado`);
 
     const nuevoStock = redondear(producto.stock_actual + cantidad);
     const campo = this.campos.CANT;
@@ -198,11 +215,11 @@ class InventarioDBF {
   actualizarPrecio(id, precioConIva, utilidad) {
     this._sincronizar();
     const producto = this.porId.get(Number(id));
-    if (!producto) throw new Error(`Producto ${id} no encontrado`);
-    if (!Number.isFinite(precioConIva) || precioConIva < 0) throw new Error("Precio inválido");
-    if (!Number.isFinite(utilidad) || utilidad < 0) throw new Error("Utilidad inválida");
+    if (!producto) throw errorDeDatos(`Producto ${id} no encontrado`);
+    if (!Number.isFinite(precioConIva) || precioConIva < 0) throw errorDeDatos("Precio inválido");
+    if (!Number.isFinite(utilidad) || utilidad < 0) throw errorDeDatos("Utilidad inválida");
     for (const campo of ["COSTO", "UTILIDAD"]) {
-      if (!this.campos[campo]) throw new Error(`${this.ruta} no tiene el campo ${campo}`);
+      if (!this.campos[campo]) throw errorPublico(`${this.ruta} no tiene el campo ${campo}`);
     }
 
     const costo = redondear(precioConIva / (1 + producto.impuesto_venta / 100));
@@ -230,11 +247,11 @@ class InventarioDBF {
     const nombre = String(data.nombre ?? "").trim();
     const precioConIva = Number(data.precio_con_iva);
     const utilidad = Number(data.utilidad ?? 0);
-    if (!codigo || !nombre) throw new Error("Código y nombre son requeridos");
-    if (!Number.isFinite(precioConIva) || precioConIva < 0) throw new Error("Precio inválido");
-    if (!Number.isFinite(utilidad) || utilidad < 0) throw new Error("Utilidad inválida");
+    if (!codigo || !nombre) throw errorDeDatos("Código y nombre son requeridos");
+    if (!Number.isFinite(precioConIva) || precioConIva < 0) throw errorDeDatos("Precio inválido");
+    if (!Number.isFinite(utilidad) || utilidad < 0) throw errorDeDatos("Utilidad inválida");
     if (this.productos.some((p) => p.codigo === codigo || p.codigo_barras === codigo)) {
-      throw new Error(`Ya existe un producto con el código ${codigo}`);
+      throw errorDeDatos(`Ya existe un producto con el código ${codigo}`);
     }
 
     // El precio ya trae el IVA: se guarda como costo y la venta no suma impuesto
@@ -283,7 +300,9 @@ class InventarioDBF {
   _codificarNumero(campo, valor) {
     const c = this.campos[campo];
     const txt = valor.toFixed(c.decimales).padStart(c.largo, " ");
-    if (txt.length > c.largo) throw new Error(`Valor ${valor} no cabe en el campo ${campo}`);
+    if (!Number.isFinite(valor) || txt.length > c.largo) {
+      throw errorDeDatos(`El valor ${valor} es demasiado grande para el campo ${campo} del inventario`);
+    }
     return Buffer.from(txt, "latin1");
   }
 

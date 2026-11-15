@@ -158,6 +158,7 @@ Se abrirá automáticamente en http://localhost:3000
 Usuario: admin
 Contraseña: la de ADMIN_PASSWORD en el .env
 ```
+En el primer ingreso el sistema pide cambiar esa contraseña antes de continuar.
 
 ### 2. Productos
 
@@ -336,7 +337,7 @@ npm install
 npm run dist
 ```
 
-El instalador queda en `desktop/dist/POS Costa Rica Setup <versión>.exe`.
+El instalador queda en `desktop/dist/Lusteph-POS-Setup-<versión>.exe`.
 Para probar sin instalar: `npm run build:frontend` y luego `npm start`.
 
 Los datos de cada cliente quedan en `%APPDATA%\POS Costa Rica\datos`
